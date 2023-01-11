@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TPP/Dialect/Tpp/TppUtils.h"
+#include "TPP/Dialect/VNNI/VNNIOps.h"
 #include "TPP/Passes.h"
 #include "TPP/TransformUtils.h"
 #include "TPP/Transforms.h"
@@ -32,6 +33,8 @@ static LogicalResult checkStructure(linalg::LinalgOp linalgOp) {
   if (iteratorTypes.size() < 4)
     return failure();
   size_t size = iteratorTypes.size() - 1;
+  if (size == 6)
+    size--;
   bool match = linalg::isReductionIterator(iteratorTypes[size]) &&
                linalg::isParallelIterator(iteratorTypes[size - 1]) &&
                linalg::isParallelIterator(iteratorTypes[size - 2]) &&
@@ -69,7 +72,11 @@ static LogicalResult checkAccessPatterns(linalg::LinalgOp linalgOp) {
     if (isInputOperand(linalgOp, operand)) {
       if (map.getNumResults() < 3)
         return failure();
-      maps.push_back(map.getMinorSubMap(3));
+      if (map.getNumResults() == 5) {
+        maps.push_back(map.getMinorSubMap(4));
+      } else {
+        maps.push_back(map.getMinorSubMap(3));
+      }
     } else {
       assert(isOutputOperand(linalgOp, operand));
       if (map.getNumResults() < 2)
@@ -78,13 +85,16 @@ static LogicalResult checkAccessPatterns(linalg::LinalgOp linalgOp) {
     }
   }
   SmallVector<AffineMap> compressedDimMaps = compressUnusedDims(maps);
+  for (auto compressedMap : compressedDimMaps) {
+    compressedMap.dump();
+  }
   using MapList = ArrayRef<ArrayRef<AffineExpr>>;
   auto infer = [](MapList m) { return AffineMap::inferFromExprList(m); };
-  AffineExpr r1, p3, p4, r2;
-  bindDims(linalgOp.getContext(), r1, p3, p4, r2);
+  AffineExpr r1, p3, p4, r2, r3;
+  bindDims(linalgOp.getContext(), r1, p3, p4, r2, r3);
   // Expected access patterns of BRGEMM
   SmallVector<AffineMap> expectedMaps =
-      infer({{r1, p3, r2}, {r1, r2, p4}, {p3, p4}});
+      infer({{r1, p3, r2}, {r1, r2.floorDiv(2), p4, r3}, {p3, p4}});
   if (compressedDimMaps != expectedMaps)
     return failure();
   LLVM_DEBUG(llvm::dbgs() << __func__ << " OK\n");
@@ -102,17 +112,23 @@ static LogicalResult checkBody(linalg::LinalgOp linalgOp) {
 static FailureOr<SmallVector<Value>>
 getSlicedOperands(OpBuilder &builder, Location loc, ValueRange localIvs,
                   linalg::LinalgOp linalgOp, ValueRange valuesToUse) {
-  assert(linalgOp->getNumOperands() == 3 &&
-         "expect 3 input/output operands");
+  assert(linalgOp->getNumOperands() == 3 && "expect 3 input/output operands");
   assert(linalgOp.getDpsInputOperands().size() == 2 &&
          "expect 2 input operands");
 
   SmallVector<Value> slicedOperands;
   for (OpOperand *operand : linalgOp.getDpsInputOperands()) {
-    FailureOr<Value> slicedOperand = utils::getSliceOperand(
-        builder, operand, linalgOp, localIvs, valuesToUse, 3);
-    if (failed(slicedOperand))
-      return failure();
+    FailureOr<Value> slicedOperand;
+    AffineMap map = linalgOp.getMatchingIndexingMap(operand);
+    if (map.getNumResults() == 5) {
+      slicedOperand = utils::getSliceOperand(builder, operand, linalgOp,
+                                             localIvs, valuesToUse, 4);
+    } else {
+      slicedOperand = utils::getSliceOperand(builder, operand, linalgOp,
+                                             localIvs, valuesToUse, 3);
+      if (failed(slicedOperand))
+        return failure();
+    }
     slicedOperands.push_back(*slicedOperand);
   }
   for (OpOperand *operand : linalgOp.getDpsInitOperands()) {
@@ -121,6 +137,9 @@ getSlicedOperands(OpBuilder &builder, Location loc, ValueRange localIvs,
     if (failed(slicedOperand))
       return failure();
     slicedOperands.push_back(*slicedOperand);
+  }
+  for (Value slicedOperand : slicedOperands) {
+    slicedOperand.dump();
   }
   return slicedOperands;
 }
@@ -150,7 +169,7 @@ mlir::linalgx::mapToBRGEMMOp(RewriterBase &rewriter,
     return rewriter.notifyMatchFailure(linalgOp, "expects a GEMM-like body");
 
   // materialize outer loops
-  unsigned upTo = linalgOp.getNumLoops() - /*BRGEMM loops=*/4;
+  unsigned upTo = linalgOp.getNumLoops() - /*BRGEMM loops=*/3;
   FailureOr<SmallVector<Range>> maybeLoopRanges =
       mlir::utils::getLoopsToMaterialize(rewriter, linalgOp, upTo);
   if (failed(maybeLoopRanges))
@@ -175,19 +194,25 @@ mlir::linalgx::mapToBRGEMMOp(RewriterBase &rewriter,
     SmallVector<Value> slicedOperands = *maybeSlicedOperands;
     assert(slicedOperands.size() == 3 && "expect three operands");
 
-    linalg::BatchReduceMatmulOp brgemm =
-        (linalgOp.hasTensorSemantics())
-            ? builder.create<linalg::BatchReduceMatmulOp>(
-                  loc, slicedOperands[2].getType(),
-                  ValueRange{slicedOperands[0], slicedOperands[1]},
-                  slicedOperands[2])
-            : builder.create<linalg::BatchReduceMatmulOp>(
-                  loc, ValueRange{slicedOperands[0], slicedOperands[1]},
-                  slicedOperands[2]);
-
-    tensorResults = insertSlicesBack(builder, loc, linalgOp, slicedOperands,
-                                     brgemm->getResults());
-
+    if (slicedOperands[1].getType().cast<ShapedType>().getRank() == 3) {
+      linalg::BatchReduceMatmulOp brgemm =
+          (linalgOp.hasTensorSemantics())
+              ? builder.create<linalg::BatchReduceMatmulOp>(
+                    loc, slicedOperands[2].getType(),
+                    ValueRange{slicedOperands[0], slicedOperands[1]},
+                    slicedOperands[2])
+              : builder.create<linalg::BatchReduceMatmulOp>(
+                    loc, ValueRange{slicedOperands[0], slicedOperands[1]},
+                    slicedOperands[2]);
+      tensorResults = insertSlicesBack(builder, loc, linalgOp, slicedOperands,
+                                       brgemm->getResults());
+    } else {
+      vnni::BRGemmOp brgemm = builder.create<vnni::BRGemmOp>(
+          loc, slicedOperands[2].getType(), slicedOperands[0],
+          slicedOperands[1], slicedOperands[2]);
+      tensorResults = insertSlicesBack(builder, loc, linalgOp, slicedOperands,
+                                       brgemm->getResults());
+    }
     return scf::ValueVector(tensorResults.begin(), tensorResults.end());
   };
   if (linalgOp.hasBufferSemantics()) {

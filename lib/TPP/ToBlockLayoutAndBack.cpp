@@ -23,6 +23,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
+
 #define GEN_PASS_CLASSES
 #include "TPP/Passes.h.inc"
 
@@ -412,7 +413,6 @@ mlir::linalgx::packVNNIMatmulOp(RewriterBase &rewriter,
   if (matmulOp.hasBufferSemantics())
     return rewriter.notifyMatchFailure(matmulOp, "require tensor semantics");
 
-  // TODO add matmul checks here
   if (!isMatmulOp(matmulOp))
     return rewriter.notifyMatchFailure(matmulOp, "require matmul semantics");
 

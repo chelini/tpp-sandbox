@@ -67,6 +67,7 @@ static bool isOutputOperand(linalg::LinalgOp linalgOp, OpOperand &operand) {
 // [p3, p4] += [r1, p3, r2] * [r1, r2, p4].
 static LogicalResult checkAccessPatterns(linalg::LinalgOp linalgOp) {
   SmallVector<AffineMap> maps;
+  bool hasVNNIMap = false;
   for (OpOperand &operand : linalgOp->getOpOperands()) {
     AffineMap map = linalgOp.getMatchingIndexingMap(&operand);
     if (isInputOperand(linalgOp, operand)) {
@@ -74,6 +75,7 @@ static LogicalResult checkAccessPatterns(linalg::LinalgOp linalgOp) {
         return failure();
       if (map.getNumResults() == 5) {
         maps.push_back(map.getMinorSubMap(4));
+        hasVNNIMap = true;
       } else {
         maps.push_back(map.getMinorSubMap(3));
       }
@@ -85,16 +87,19 @@ static LogicalResult checkAccessPatterns(linalg::LinalgOp linalgOp) {
     }
   }
   SmallVector<AffineMap> compressedDimMaps = compressUnusedDims(maps);
-  for (auto compressedMap : compressedDimMaps) {
-    compressedMap.dump();
-  }
   using MapList = ArrayRef<ArrayRef<AffineExpr>>;
   auto infer = [](MapList m) { return AffineMap::inferFromExprList(m); };
   AffineExpr r1, p3, p4, r2, r3;
-  bindDims(linalgOp.getContext(), r1, p3, p4, r2, r3);
-  // Expected access patterns of BRGEMM
-  SmallVector<AffineMap> expectedMaps =
-      infer({{r1, p3, r2}, {r1, r2.floorDiv(2), p4, r3}, {p3, p4}});
+  SmallVector<AffineMap> expectedMaps;
+  if (hasVNNIMap) {
+    bindDims(linalgOp.getContext(), r1, p3, p4, r2, r3);
+    // Expected access patterns of BRGEMM
+    expectedMaps =
+        infer({{r1, p3, r2}, {r1, r2.floorDiv(2), p4, r3}, {p3, p4}});
+  } else {
+    bindDims(linalgOp.getContext(), r1, p3, p4, r2);
+    expectedMaps = infer({{r1, p3, r2}, {r1, r2, p4}, {p3, p4}});
+  }
   if (compressedDimMaps != expectedMaps)
     return failure();
   LLVM_DEBUG(llvm::dbgs() << __func__ << " OK\n");
@@ -138,9 +143,6 @@ getSlicedOperands(OpBuilder &builder, Location loc, ValueRange localIvs,
       return failure();
     slicedOperands.push_back(*slicedOperand);
   }
-  for (Value slicedOperand : slicedOperands) {
-    slicedOperand.dump();
-  }
   return slicedOperands;
 }
 
@@ -167,9 +169,12 @@ mlir::linalgx::mapToBRGEMMOp(RewriterBase &rewriter,
 
   if (failed(checkBody(linalgOp)))
     return rewriter.notifyMatchFailure(linalgOp, "expects a GEMM-like body");
-
   // materialize outer loops
   unsigned upTo = linalgOp.getNumLoops() - /*BRGEMM loops=*/3;
+  // VNNI loop
+  if (linalgOp.getNumLoops() == 7) {
+    upTo--;
+  }
   FailureOr<SmallVector<Range>> maybeLoopRanges =
       mlir::utils::getLoopsToMaterialize(rewriter, linalgOp, upTo);
   if (failed(maybeLoopRanges))

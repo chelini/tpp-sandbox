@@ -293,4 +293,14 @@ def Bufferize : Pass<"bufferize", "ModuleOp"> {
   let constructor = "mlir::tpp::createBufferizePass()";
 }
 
+def InterchangeBlockConvToExposeMatmul : 
+  Pass<"interchange-conv-to-expose-matmul", "func::FuncOp"> {
+  let summary = "Interchange a blocked convolution to expose a matmul op.";
+  let constructor = "mlir::tpp::createInterchangeBlockConvToExposeMatmulPass()";
+  let description = [{
+    The interchange exposes as innermost loops a [reduction, parallel, parallel, 
+    reduction] that can map to BRGEMM or Matmul.
+  }];
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

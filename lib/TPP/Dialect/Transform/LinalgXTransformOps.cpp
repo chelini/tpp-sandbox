@@ -360,7 +360,7 @@ transform::GetBlockedConvolutions::apply(transform::TransformResults &results,
   ArrayRef<Operation *> payloadOps = state.getPayloadOps(getTarget());
   for (Operation *op : payloadOps) {
     if (linalgx::utils::isaBlockedConvolutionOpInterface(op) !=
-        linalgx::utils::BlockedConvKind::BlockedConvWithBatchDim)
+        linalgx::utils::BlockedConvKind::NotABlockedConv)
       res.push_back(op);
   }
   results.set(getResult().cast<OpResult>(), res);

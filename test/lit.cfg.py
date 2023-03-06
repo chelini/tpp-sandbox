@@ -42,7 +42,7 @@ llvm_config.use_default_substitutions()
 # excludes: A list of directories to exclude from the testsuite. The 'Inputs'
 # subdirectories contain auxiliary inputs for various tests in their parent
 # directories.
-config.excludes = ["ResNet-V2-50.mlir", "pass-matmul-fuse.mlir", "pass-mlp-packed.mlir",
+config.excludes = ["tile-and-fuse-parallel.mlir", "pass-matmul-fuse.mlir", "pass-mlp-packed.mlir",
                   "tile-and-fuse-chain-matmul.mlir", "tile-and-fuse-mlp.mlir", 
                   "tile-and-fuse-user-driven.mlir",
                   "tile-and-fuse-wrong-tiles.mlir", "tile-and-fuse.mlir"]

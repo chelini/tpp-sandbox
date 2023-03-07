@@ -1,11 +1,19 @@
-// RUN: tpp-opt %s -pack-conv2DNhwcHwcf="block-factors=32,32" -propagate-pack-and-unpack -canonicalize -constant-fold-pack -interchange-conv-to-expose-matmul -tile-consumer-and-fuse-producers="tile-sizes=1,1,1" -cse -canonicalize -rewrite-to-brgemm | FileCheck -check-prefix=BRGEMM %s
+// RUN: tpp-opt %s -pack-conv2DNhwcHwcf="block-factors=32,32" -propagate-pack-and-unpack -canonicalize -constant-fold-pack -tile-consumer-and-fuse-producers="tile-sizes=1,1,1" -cse -canonicalize -rewrite-to-brgemm | FileCheck -check-prefix=BRGEMM %s
 
 // BRGEMM-COUNT-16: linalg.batch_reduce_matmul
 
 // RUN: tpp-opt %s -pack-conv2DNhwcHwcf="block-factors=32,32" -propagate-pack-and-unpack -canonicalize -constant-fold-pack | FileCheck %s --check-prefix=PACK
 
-// PACK-COUNT-2: tensor.pack
+// PACK-COUNT-1: tensor.pack
 // PACK-COUNT-1: tensor.unpack
+
+// RUN: tpp-opt %s -pack-conv2DNhwcHwcf="block-factors=32,32" -propagate-pack-and-unpack -canonicalize -constant-fold-pack -tile-consumer-and-fuse-producers="tile-sizes=1,1,1" -cse -canonicalize -rewrite-to-brgemm -rewrite-to-gemm | FileCheck -check-prefix=GEMM %s
+
+// GEMM-COUNT-12: linalg.matmul
+
+// RUN: tpp-opt %s | FileCheck %s --check-prefix=CONV
+
+// CONV-COUNT-29: linalg.conv_2d_nhwc_hwcf
 
 #map = affine_map<(d0, d1, d2, d3) -> (d3)>
 #map1 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>

@@ -359,7 +359,8 @@ transform::GetBlockedConvolutions::apply(transform::TransformResults &results,
   SmallVector<Operation *> res;
   ArrayRef<Operation *> payloadOps = state.getPayloadOps(getTarget());
   for (Operation *op : payloadOps) {
-    if (linalgx::utils::isBlockedConvolution(op))
+    if (linalgx::utils::isaBlockedConvolutionOpInterface(op) !=
+        linalgx::utils::BlockedConvKind::BlockedConvWithBatchDim)
       res.push_back(op);
   }
   results.set(getResult().cast<OpResult>(), res);

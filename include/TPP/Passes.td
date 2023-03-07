@@ -188,6 +188,22 @@ def RewriteToBatchReduceGemm : Pass<"rewrite-to-brgemm", "func::FuncOp"> {
   let constructor = "mlir::tpp::createRewriteToBatchReduceGemmPass()";
 }
 
+def RewriteToGemm : Pass<"rewrite-to-gemm", "func::FuncOp"> {
+  let summary = "Rewrite a linalg.generic to Gemm";
+  let description = [{
+    Rewrite a linalg.generic to a linalg.matmul.  Example: Given a convolution
+    in block layout with unit filter: [N][K’][P][Q][k] = [N][C’][H][W][c] *
+    [K’][C’][R][S][c][k] we can rewriter as [N][K’][P][Q][k] = [N][C’][H][W][c] *
+    [K’][C’][c][k] since R = S = 1 implies H = P and W = Q. We can now map to a
+    linalg.matmul the three innermost dimensions: c is the reduction K, k is N and
+    W = Q is M. The transformation works also on non-unit filter in this case there
+    is a sliding window that need to be taken into account.
+
+    The pass works both a memref and tensor level.
+  }];
+  let constructor = "mlir::tpp::createRewriteToGemmPass()";
+}
+
 def TileConsumerAndFuseProducers : Pass<"tile-consumer-and-fuse-producers", 
                                         "func::FuncOp"> {
   let summary = "Tile consumers and fuse producers";
@@ -291,16 +307,6 @@ def ConvInitSimplify : Pass<"conv-init-simplify", "func::FuncOp"> {
 def Bufferize : Pass<"bufferize", "ModuleOp"> {
   let summary = "Bufferize tensor to memref for the entire module";
   let constructor = "mlir::tpp::createBufferizePass()";
-}
-
-def InterchangeBlockConvToExposeMatmul : 
-  Pass<"interchange-conv-to-expose-matmul", "func::FuncOp"> {
-  let summary = "Interchange a blocked convolution to expose a matmul op.";
-  let constructor = "mlir::tpp::createInterchangeBlockConvToExposeMatmulPass()";
-  let description = [{
-    The interchange exposes as innermost loops a [reduction, parallel, parallel, 
-    reduction] that can map to BRGEMM or Matmul.
-  }];
 }
 
 #endif // TPP_DIALECT_TPP_PASSES

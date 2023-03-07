@@ -95,8 +95,7 @@ std::unique_ptr<OperationPass<ModuleOp>> createConstantFoldPackPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createElementWiseFusionPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createConvInitSimplifyPass();
 std::unique_ptr<OperationPass<ModuleOp>> createBufferizePass();
-std::unique_ptr<OperationPass<func::FuncOp>>
-createInterchangeBlockConvToExposeMatmulPass();
+std::unique_ptr<OperationPass<func::FuncOp>> createRewriteToGemmPass();
 
 } // namespace tpp
 } // namespace mlir

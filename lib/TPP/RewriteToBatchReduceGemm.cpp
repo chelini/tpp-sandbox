@@ -1,4 +1,4 @@
-//===- MapToBatchReduceGemm.cpp ----------------------------------*- C++-*-===//
+//===- RewriteToBatchReduceGemm.cpp ------------------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,6 +15,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/Transforms/Transforms.h"
@@ -314,6 +315,8 @@ mlir::linalgx::rewriteToBRGemmOp(RewriterBase &rewriter,
             : builder.create<linalg::BatchReduceMatmulOp>(
                   loc, ValueRange{slicedOperands[0], slicedOperands[1]},
                   slicedOperands[2]);
+    if (auto metadata = linalgOp->getAttr("metadata"))
+      brgemm->setAttr("metadata", metadata);
     tensorResults = insertSlicesBack(builder, loc, linalgOp, slicedOperands,
                                      brgemm->getResults());
 
@@ -456,14 +459,120 @@ struct RewriteToBatchReduceGemmVnniImpl
   }
 };
 
+// Return true if the range is a constant one.
+static bool isOne(const Range &range) {
+  auto constantRange = linalgx::utils::getConstantRange(range);
+  if (!constantRange)
+    return false;
+  return *constantRange == 1;
+}
+
+// Return true if the indexing map has only unit strides.
+static bool hasStrideOne(AffineMap indexingMap, MLIRContext *ctx) {
+  for (AffineExpr expr : indexingMap.getResults()) {
+    AffineExpr multiplicativeFactor = getAffineConstantExpr(1, ctx);
+    if (failed(linalgx::utils::walkConvExpr(expr, multiplicativeFactor)))
+      return false;
+    if (multiplicativeFactor.cast<AffineConstantExpr>().getValue() != 1)
+      return false;
+  }
+  return true;
+}
+
+struct PreMappingCollapseUnitFilter
+    : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    linalg::detail::ConvolutionDimensions dimensions;
+    if (linalgx::utils::isaBlockedConvolutionOpInterface(linalgOp,
+                                                         &dimensions) !=
+        linalgx::utils::BlockedConvKind::BlockedConvWithBatchDim)
+      return failure();
+
+    // Check filter loops - R and S. Should be 1s.
+    // TODO: check unit dims also for the next stage `PreMappingCollapseImg`.
+    SmallVector<Range> iterationDomain =
+        cast<TilingInterface>(linalgOp.getOperation())
+            .getIterationDomain(rewriter);
+    if ((!isOne(iterationDomain[dimensions.filterLoop[0]])) ||
+        (!isOne(iterationDomain[dimensions.filterLoop[1]])))
+      return failure();
+
+    // Check stride - must be 1.
+    AffineMap imageMap =
+        linalgOp.getMatchingIndexingMap(linalgOp.getDpsInputOperand(0));
+    if (!hasStrideOne(imageMap, linalgOp.getContext()))
+      return failure();
+
+    // Note: this collapse pattern is valid only for blocked convolutions
+    // with bacth dimensions. Since we are removing only unit dimension we can
+    // try to infer the reassociation or expose upstream linalg fold unit dims.
+    FailureOr<linalg::GenericOp> collapsedOnFilter = linalgx::collapseIterators(
+        rewriter, linalgOp, {{0}, {1}, {2}, {3}, {4}, {5, 6, 7}, {8}});
+    if (failed(collapsedOnFilter))
+      return failure();
+    (*collapsedOnFilter)
+        ->setAttr("premapping", rewriter.getStringAttr("filter"));
+    if (auto metadata = linalgOp->getAttr("metadata"))
+      (*collapsedOnFilter)->setAttr("metadata", metadata);
+    return success();
+  }
+};
+
+struct PreMappingCollapseImg : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    auto metadata = linalgOp->getAttrOfType<StringAttr>("premapping");
+    if (!metadata || metadata.getValue() != "filter")
+      return failure();
+    FailureOr<linalg::GenericOp> collapsedOnImage = linalgx::collapseIterators(
+        rewriter, linalgOp, {{0}, {1}, {2, 3}, {4}, {5}, {6}});
+    if (failed(collapsedOnImage))
+      return failure();
+    (*collapsedOnImage)->setAttr("premapping", rewriter.getStringAttr("image"));
+    if (auto metadata = linalgOp->getAttr("metadata"))
+      (*collapsedOnImage)->setAttr("metadata", metadata);
+    return success();
+  }
+};
+
+struct PreMappingInterchange : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    auto metadata = linalgOp->getAttrOfType<StringAttr>("premapping");
+    if (!metadata || metadata.getValue() != "image")
+      return failure();
+    FailureOr<linalg::GenericOp> interchanged =
+        linalg::interchangeGenericOp(rewriter, linalgOp, {0, 1, 4, 2, 3, 5});
+    if (failed(interchanged))
+      return failure();
+    (*interchanged)
+        ->setAttr("premapping", rewriter.getStringAttr("interchange"));
+    if (auto metadata = linalgOp->getAttr("metadata"))
+      (*interchanged)->setAttr("metadata", metadata);
+    return success();
+  }
+};
+
 struct RewriteToBatchReduceGemm
     : public RewriteToBatchReduceGemmBase<RewriteToBatchReduceGemm> {
   void runOnOperation() override {
     RewritePatternSet patterns(getOperation().getContext());
+    // Pre-pattern that prepare a blocked convolution for BRGemm mapping.
+    patterns.add<PreMappingCollapseUnitFilter, PreMappingCollapseImg,
+                 PreMappingInterchange>(patterns.getContext());
+
     patterns
         .add<RewriteToBatchReduceGemmImpl, RewriteToBatchReduceGemmVnniImpl>(
             patterns.getContext());
     tensor::populateMergeConsecutiveInsertExtractSlicePatterns(patterns);
+    tensor::populateReassociativeReshapeFoldingPatterns(patterns);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
     return;
   }

@@ -43,7 +43,8 @@ static bool isMatmulLike(Operation *op) {
 
 static bool isConvolutionLike(Operation *op) {
   if (linalg::GenericOp maybeMatmul = dyn_cast_or_null<linalg::GenericOp>(op))
-    return linalgx::utils::isBlockedConvolution(op);
+    return linalgx::utils::isaBlockedConvolutionOpInterface(op) !=
+           linalgx::utils::BlockedConvKind::NotABlockedConv;
   return false;
 }
 
@@ -549,8 +550,6 @@ struct TileConsumerAndFuseProducers
     }
 
     RewritePatternSet patterns(&getContext());
-    // fold unit-extent dims for linalg on tensors.
-    linalg::populateFoldUnitExtentDimsViaSlicesPatterns(patterns);
     tensor::populateMergeConsecutiveInsertExtractSlicePatterns(patterns);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
     return;

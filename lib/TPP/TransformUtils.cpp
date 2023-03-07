@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "TPP/Dialect/Tpp/TppUtils.h"
+#include "TPP/TransformUtils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
@@ -185,27 +186,45 @@ FailureOr<SmallVector<Range>> getLoopsToMaterialize(RewriterBase &rewriter,
   return loopRanges;
 }
 
-bool isBlockedConvolution(Operation *op) {
-  if (!isa<linalg::LinalgOp>(op))
-    return false;
-  linalg::LinalgOp linalgOp = cast<linalg::LinalgOp>(op);
-  auto iteratorTypes = linalgOp.getIteratorTypesArray();
-  if (iteratorTypes.size() != 9)
-    return false;
-  bool match = linalg::isParallelIterator(iteratorTypes[0]) &&
-               linalg::isParallelIterator(iteratorTypes[1]) &&
-               linalg::isParallelIterator(iteratorTypes[2]) &&
-               linalg::isParallelIterator(iteratorTypes[3]) &&
-               linalg::isParallelIterator(iteratorTypes[4]) &&
-               linalg::isReductionIterator(iteratorTypes[5]) &&
-               linalg::isReductionIterator(iteratorTypes[6]) &&
-               linalg::isReductionIterator(iteratorTypes[7]) &&
-               linalg::isReductionIterator(iteratorTypes[8]);
-  if (!match)
-    return false;
-  if (failed(mlir::linalg::detail::verifyConvolutionInterface(linalgOp)))
-    return false;
-  return tpp::utils::hasMatmulBody(linalgOp);
+static BlockedConvKind isaBlockedConvolutionOpInterfaceImpl(
+    Operation *op, linalg::detail::ConvolutionDimensions *dimensions) {
+  assert(dimensions && "Expect dimensions to be a valid pointer");
+  if (isConvolutionInterfaceImpl(op, dimensions) !=
+      linalg::detail::MatchConvolutionResult::Success)
+    return BlockedConvKind::NotABlockedConv;
+
+  linalg::detail::ConvolutionDimensions expectedDimPosWithBatch{
+      {0},    // batch
+      {2, 3}, // outputImage
+      {1, 4}, // outputChannel
+      {6, 7}, // filterLoop
+      {5, 8}, // inputChannel
+      {}      // depth
+  };
+
+  linalg::detail::ConvolutionDimensions expectedDimPosWithOutBatch{
+      {},     // batch
+      {1, 2}, // outputImage
+      {0, 3}, // outputChannel
+      {5, 6}, // filterLoop
+      {4, 7}, // inputChannel
+      {}      // depth
+  };
+
+  if (*dimensions == expectedDimPosWithBatch)
+    return BlockedConvKind::BlockedConvWithBatchDim;
+  if (*dimensions == expectedDimPosWithOutBatch)
+    return BlockedConvKind::BlockedConvWithoutBatchDim;
+  return BlockedConvKind::NotABlockedConv;
+}
+
+BlockedConvKind isaBlockedConvolutionOpInterface(
+    Operation *op, linalg::detail::ConvolutionDimensions *dimensions) {
+  if (!dimensions) {
+    linalg::detail::ConvolutionDimensions localDimensions;
+    return isaBlockedConvolutionOpInterfaceImpl(op, &localDimensions);
+  }
+  return isaBlockedConvolutionOpInterfaceImpl(op, dimensions);
 }
 
 // TODO: Check indexing maps and iterator types. They should
@@ -217,7 +236,7 @@ bool isBlockedMatmul(Operation *op) {
   return tpp::utils::hasMatmulBody(linalgOp);
 }
 
-static std::optional<int64_t> getConstantRange(const Range &range) {
+std::optional<int64_t> getConstantRange(const Range &range) {
   std::optional<int64_t> stride = getConstantIntValue(range.stride);
   if (!stride || *stride != 1)
     return std::nullopt;
@@ -280,8 +299,59 @@ bool validateFullTilesOnDims(TilingInterface tileOp,
   return true;
 }
 
+// Return success if `expr` is either a dimExpr or a mul expression dim * cst OR
+// cst * dim.
+static LogicalResult isDimExprOrMulExpr(AffineExpr expr,
+                                        AffineExpr &multiplicativeFactor) {
+  if (auto dimExpr = expr.dyn_cast<AffineDimExpr>())
+    return success();
+  if (auto mulExpr = expr.dyn_cast<AffineBinaryOpExpr>()) {
+    if (mulExpr.getKind() != AffineExprKind::Mul)
+      return failure();
+    auto lhs = mulExpr.getLHS();
+    auto rhs = mulExpr.getRHS();
+    // Assert if we find a symbol. We need to check that we don't have them in
+    // the preconditions for this pattern. `verifyConvolutionInterface` allows
+    // them.
+    if (auto symbol = lhs.dyn_cast<AffineSymbolExpr>())
+      assert(false && "unexpected symbol expr");
+    if (auto symbol = rhs.dyn_cast<AffineSymbolExpr>())
+      assert(false && "unexpected symbol expr");
+    // If the lhs is a constant the rhs is a dim and viceversa.
+    if (auto constant = lhs.dyn_cast<AffineConstantExpr>()) {
+      if (auto dim = rhs.dyn_cast<AffineDimExpr>()) {
+        multiplicativeFactor = multiplicativeFactor * constant.getValue();
+        return success();
+      }
+      return failure();
+    }
+    if (auto constant = rhs.dyn_cast<AffineConstantExpr>()) {
+      if (auto dim = lhs.dyn_cast<AffineDimExpr>()) {
+        multiplicativeFactor = multiplicativeFactor * constant.getValue();
+        return success();
+      }
+      return failure();
+    }
+    return failure();
+  }
+  return failure();
+}
+
+// Walk `convExpr` in pre-order and extract a constant if any.
+LogicalResult walkConvExpr(AffineExpr convExpr,
+                           AffineExpr &multiplicativeFactor) {
+  if (auto dimExpr = convExpr.dyn_cast<AffineDimExpr>())
+    return success();
+  if (auto binExpr = convExpr.dyn_cast<AffineBinaryOpExpr>()) {
+    if (binExpr.getKind() != AffineExprKind::Add)
+      return failure();
+    return success(
+        succeeded(isDimExprOrMulExpr(binExpr.getLHS(), multiplicativeFactor)) &&
+        succeeded(isDimExprOrMulExpr(binExpr.getRHS(), multiplicativeFactor)));
+  }
+  return failure();
+}
+
 } // namespace utils
-
 } // namespace linalgx
-
 } // namespace mlir

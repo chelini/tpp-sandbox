@@ -247,7 +247,8 @@ struct InterchangeIteratorsConv2DNchwFchw
 
   LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
-    if (!linalgx::utils::isBlockedConvolution(genericOp))
+    if (linalgx::utils::isaBlockedConvolutionOpInterface(genericOp) !=
+        linalgx::utils::BlockedConvKind::BlockedConvWithBatchDim)
       return failure();
 
     // clang-format off

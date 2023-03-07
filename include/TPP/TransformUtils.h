@@ -9,6 +9,7 @@
 #ifndef TPP_TRANSFORMUTILS_H
 #define TPP_TRANSFORMUTILS_H
 
+#include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/ViewLikeInterface.h"
 
@@ -57,7 +58,17 @@ FailureOr<SmallVector<Range>> getLoopsToMaterialize(RewriterBase &rewriter,
                                                     linalg::LinalgOp linalgOp,
                                                     unsigned upTo);
 // Return true if the convolution is blocked.
-bool isBlockedConvolution(Operation *op);
+enum class BlockedConvKind {
+  NotABlockedConv = 0,
+  BlockedConvWithBatchDim,
+  BlockedConvWithoutBatchDim
+};
+// Checks whether `op` conforms to a blocked convolution with the following
+// block layout: [N][K’][P][Q][k] += [N][C’][H][W][c] * [K’][C’][R][S][c][k].
+// The method populates `dimensions` with indexes of the different kinds of
+// dimensions when present.
+BlockedConvKind isaBlockedConvolutionOpInterface(
+    Operation *op, linalg::detail::ConvolutionDimensions *dimensions = nullptr);
 
 // Return true if the matmul is blocked.
 bool isBlockedMatmul(Operation *op);
@@ -69,6 +80,16 @@ bool isBlockedMatmul(Operation *op);
 bool validateFullTilesOnDims(TilingInterface tileOp,
                              ArrayRef<OpFoldResult> tiles,
                              ArrayRef<size_t> dims = {});
+
+// Return the size of the range as int64_t if the range is constant.
+std::optional<int64_t> getConstantRange(const Range &range);
+
+// Given an affineExpr, return true if tha affine expression is:
+// 1. AffineDimExpr
+// 2. AffineDimExpr + AffineDimExpr
+// 3. AffineDimExpr * AffineConstantExpr/AffineSymbolExpr + AffineDimExpr
+// For case 3. return the multiplicative factor.
+LogicalResult walkConvExpr(AffineExpr expr, AffineExpr &multiplicativeFactor);
 
 } // namespace utils
 } // namespace linalgx

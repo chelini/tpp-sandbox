@@ -1,4 +1,4 @@
-//===- MapConv2DNhwcHwcfToMatmulOrBrgemm.cpp --------------------*- C++-*-===//
+//===- RewriteConvToMatmulImpl.cpp -------------------------------*- C++-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,13 +7,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "TPP/Dialect/Tpp/TppUtils.h"
+#include "TPP/Passes.h"
 #include "TPP/TransformUtils.h"
 #include "TPP/Transforms.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
+#include "mlir/Dialect/Tensor/Transforms/Transforms.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace mlir;
+
+#define GEN_PASS_CLASSES
+#include "TPP/Passes.h.inc"
 
 // Return the size of the image slice to extract and use into the GEMM
 // operation. If we have a slide window (R and S are not 1). The size
@@ -43,59 +51,6 @@ computeSizeGemmForImage(OpBuilder &builder, linalg::LinalgOp linalgOp) {
   sizes.push_back(linalg::createFoldedDimOp(builder, linalgOp.getLoc(),
                                             filter->get(), kIdx));
   return sizes;
-}
-
-// Return success if `expr` is either a dimExpr or a mul expression dim * cst OR
-// cst * dim.
-static LogicalResult isDimExprOrMulExpr(AffineExpr expr,
-                                        AffineExpr &multiplicativeFactor) {
-  if (auto dimExpr = expr.dyn_cast<AffineDimExpr>())
-    return success();
-  if (auto mulExpr = expr.dyn_cast<AffineBinaryOpExpr>()) {
-    if (mulExpr.getKind() != AffineExprKind::Mul)
-      return failure();
-    auto lhs = mulExpr.getLHS();
-    auto rhs = mulExpr.getRHS();
-    // Assert if we find a symbol. We need to check that we don't have them in
-    // the preconditions for this pattern. `verifyConvolutionInterface` allows
-    // them.
-    if (auto symbol = lhs.dyn_cast<AffineSymbolExpr>())
-      assert(false && "unexpected symbol expr");
-    if (auto symbol = rhs.dyn_cast<AffineSymbolExpr>())
-      assert(false && "unexpected symbol expr");
-    // If the lhs is a constant the rhs is a dim and viceversa.
-    if (auto constant = lhs.dyn_cast<AffineConstantExpr>()) {
-      if (auto dim = rhs.dyn_cast<AffineDimExpr>()) {
-        multiplicativeFactor = multiplicativeFactor * constant.getValue();
-        return success();
-      }
-      return failure();
-    }
-    if (auto constant = rhs.dyn_cast<AffineConstantExpr>()) {
-      if (auto dim = lhs.dyn_cast<AffineDimExpr>()) {
-        multiplicativeFactor = multiplicativeFactor * constant.getValue();
-        return success();
-      }
-      return failure();
-    }
-    return failure();
-  }
-  return failure();
-}
-
-// Walk `convExpr` in pre-order and extract a constant if any.
-static LogicalResult walkConvExpr(AffineExpr convExpr,
-                                  AffineExpr &multiplicativeFactor) {
-  if (auto dimExpr = convExpr.dyn_cast<AffineDimExpr>())
-    return success();
-  if (auto binExpr = convExpr.dyn_cast<AffineBinaryOpExpr>()) {
-    if (binExpr.getKind() != AffineExprKind::Add)
-      return failure();
-    return success(
-        succeeded(isDimExprOrMulExpr(binExpr.getLHS(), multiplicativeFactor)) &&
-        succeeded(isDimExprOrMulExpr(binExpr.getRHS(), multiplicativeFactor)));
-  }
-  return failure();
 }
 
 static FailureOr<Value> getSlicedConvOperandImpl(OpBuilder &builder,
@@ -146,8 +101,9 @@ static FailureOr<Value> getSlicedConvOperandImpl(OpBuilder &builder,
     // a) AffineDimExpr
     // b) AffineDimExpr + AffineDimExpr
     // c) AffineDimExpr * AffineConstantExpr/AffineSymbolExpr + AffineDimExpr
-    assert(succeeded(walkConvExpr(wExpr, multiplicativeFactor)) &&
-           "something went really wrong");
+    assert(
+        succeeded(linalgx::utils::walkConvExpr(wExpr, multiplicativeFactor)) &&
+        "something went really wrong");
     strides[strides.size() - 2] = builder.getIndexAttr(
         multiplicativeFactor.cast<AffineConstantExpr>().getValue());
   }
@@ -228,13 +184,13 @@ mlir::linalgx::rewriteConvToMatmul(RewriterBase &rewriter,
   if (!llvm::isa_and_nonnull<linalg::GenericOp>(linalgOp))
     return rewriter.notifyMatchFailure(linalgOp, "require a linalg.generic");
 
-  if (failed(mlir::linalg::detail::verifyConvolutionInterface(linalgOp)))
-    return rewriter.notifyMatchFailure(linalgOp,
-                                       "operation is not a convolution");
-
   if (!checkMappingToMatmul(linalgOp))
     return rewriter.notifyMatchFailure(
         linalgOp, "cannot match operation iterators with matmul iterators");
+
+  if (failed(mlir::linalg::detail::verifyConvolutionInterface(linalgOp)))
+    return rewriter.notifyMatchFailure(linalgOp,
+                                       "operation is not a convolution");
 
   // peel-out all loops but the three innermost.
   unsigned upTo = linalgOp.getNumLoops() - /*GEMM loops=*/3;
@@ -269,6 +225,8 @@ mlir::linalgx::rewriteConvToMatmul(RewriterBase &rewriter,
                  : builder.create<linalg::MatmulOp>(
                        loc, ValueRange{slicedOperands[0], slicedOperands[1]},
                        slicedOperands[2]);
+    if (auto metadata = linalgOp->getAttr("metadata"))
+      matmul->setAttr("metadata", metadata);
     tensorResults = insertSlicesBack(builder, loc, linalgOp, slicedOperands,
                                      matmul->getResults());
 
@@ -309,4 +267,60 @@ mlir::linalgx::rewriteConvToMatmul(RewriterBase &rewriter,
                                              : tensorResults);
   assert(matmul && "invalid return");
   return matmul;
+}
+
+//===----------------------------------------------------------------------===//
+// Passes
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+struct RewriteToGemmImpl : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    FailureOr<linalg::MatmulOp> maybeLinalgMatmul =
+        mlir::linalgx::rewriteConvToMatmul(rewriter, linalgOp);
+    if (failed(maybeLinalgMatmul))
+      return failure();
+    return success();
+  }
+};
+
+struct PreMappingInterchange : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    linalg::detail::ConvolutionDimensions dimensions;
+    if (linalgx::utils::isaBlockedConvolutionOpInterface(linalgOp,
+                                                         &dimensions) !=
+        linalgx::utils::BlockedConvKind::BlockedConvWithBatchDim)
+      return failure();
+    SmallVector<unsigned> interchangeVector = {0, 1, 2, 5, 6, 7, 3, 4, 8};
+    FailureOr<linalg::GenericOp> maybeInterchange =
+        interchangeGenericOp(rewriter, linalgOp, interchangeVector);
+    if (failed(maybeInterchange))
+      return failure();
+    return success();
+  }
+};
+
+struct RewriteToGemm : public RewriteToGemmBase<RewriteToGemm> {
+  void runOnOperation() override {
+    RewritePatternSet patterns(getOperation().getContext());
+    // Pre-pattern that prepare a blocked convolution for Gemm mapping.
+    patterns.add<PreMappingInterchange>(patterns.getContext());
+    patterns.add<RewriteToGemmImpl>(patterns.getContext());
+    tensor::populateMergeConsecutiveInsertExtractSlicePatterns(patterns);
+    (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+  }
+};
+
+} // end namespace
+
+std::unique_ptr<OperationPass<func::FuncOp>>
+mlir::tpp::createRewriteToGemmPass() {
+  return std::make_unique<RewriteToGemm>();
 }

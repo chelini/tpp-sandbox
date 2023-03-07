@@ -1,4 +1,4 @@
-// RUN: tpp-opt %s -pack-conv2DNhwcHwcf="block-factors=32,32" -propagate-pack-and-unpack -canonicalize -constant-fold-pack -interchange-conv-to-expose-matmul -element-wise-fusion -tile-consumer-and-fuse-producers="tile-sizes=1,1,1" -cse -canonicalize -rewrite-to-brgemm | FileCheck --check-prefix=BRGEMM %s
+// RUN: tpp-opt %s -pack-conv2DNhwcHwcf="block-factors=32,32" -propagate-pack-and-unpack -canonicalize -constant-fold-pack -element-wise-fusion -tile-consumer-and-fuse-producers="tile-sizes=1,1,1" -cse -canonicalize -rewrite-to-brgemm | FileCheck --check-prefix=BRGEMM %s
 
 // BRGEMM-COUNT-30: linalg.batch_reduce_matmul
 
@@ -6,6 +6,10 @@
 
 // PACK-COUNT-1: tensor.pack
 // PACK-COUNT-1: tensor.unpack
+
+// RUN: tpp-opt %s -pack-conv2DNhwcHwcf="block-factors=32,32" -propagate-pack-and-unpack -canonicalize -constant-fold-pack -tile-consumer-and-fuse-producers="tile-sizes=1,1,1" -cse -canonicalize -rewrite-to-brgemm -rewrite-to-gemm | FileCheck -check-prefix=GEMM %s
+
+// GEMM-COUNT-23: linalg.matmul
 
 #map = affine_map<(d0, d1, d2, d3) -> (d3)>
 #map1 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
@@ -147,7 +151,7 @@ module {
     } : tensor<1x224x224x3xf32> to tensor<1x230x230x3xf32>
     %0 = tensor.empty() : tensor<1x112x112x64xf32>
     %1 = linalg.fill ins(%cst_0 : f32) outs(%0 : tensor<1x112x112x64xf32>) -> tensor<1x112x112x64xf32>
-    %2 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%padded, %cst_17 : tensor<1x230x230x3xf32>, tensor<7x7x3x64xf32>) outs(%1 : tensor<1x112x112x64xf32>) -> tensor<1x112x112x64xf32>
+    %2 = linalg.conv_2d_nhwc_hwcf {metadata = "conv1", dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%padded, %cst_17 : tensor<1x230x230x3xf32>, tensor<7x7x3x64xf32>) outs(%1 : tensor<1x112x112x64xf32>) -> tensor<1x112x112x64xf32>
     %3 = tensor.empty() : tensor<1x112x112x64xf32>
     %4 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_18 : tensor<64xf32>) outs(%3 : tensor<1x112x112x64xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -175,7 +179,7 @@ module {
     %12 = linalg.pooling_nhwc_max {dilations = dense<1> : vector<2xi64>, strides = dense<2> : vector<2xi64>} ins(%padded_125, %9 : tensor<1x114x114x64xf32>, tensor<3x3xf32>) outs(%11 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
     %13 = tensor.empty() : tensor<1x56x56x256xf32>
     %14 = linalg.fill ins(%cst_0 : f32) outs(%13 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
-    %15 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%12, %cst_23 : tensor<1x56x56x64xf32>, tensor<1x1x64x256xf32>) outs(%14 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
+    %15 = linalg.conv_2d_nhwc_hwcf {metadata = "conv2", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%12, %cst_23 : tensor<1x56x56x64xf32>, tensor<1x1x64x256xf32>) outs(%14 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
     %16 = tensor.empty() : tensor<1x56x56x256xf32>
     %17 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_24 : tensor<256xf32>) outs(%16 : tensor<1x56x56x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -189,7 +193,7 @@ module {
     } -> tensor<1x56x56x256xf32>
     %20 = tensor.empty() : tensor<1x56x56x64xf32>
     %21 = linalg.fill ins(%cst_0 : f32) outs(%20 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
-    %22 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%12, %cst_19 : tensor<1x56x56x64xf32>, tensor<1x1x64x64xf32>) outs(%21 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
+    %22 = linalg.conv_2d_nhwc_hwcf {metadata = "conv3", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%12, %cst_19 : tensor<1x56x56x64xf32>, tensor<1x1x64x64xf32>) outs(%21 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
     %23 = tensor.empty() : tensor<1x56x56x64xf32>
     %24 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_20 : tensor<64xf32>) outs(%23 : tensor<1x56x56x64xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -213,7 +217,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x56x56x64xf32> to tensor<1x58x58x64xf32>
-    %31 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_126, %cst_21 : tensor<1x58x58x64xf32>, tensor<3x3x64x64xf32>) outs(%30 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
+    %31 = linalg.conv_2d_nhwc_hwcf {metadata = "conv4", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_126, %cst_21 : tensor<1x58x58x64xf32>, tensor<3x3x64x64xf32>) outs(%30 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
     %32 = tensor.empty() : tensor<1x56x56x64xf32>
     %33 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_22 : tensor<64xf32>) outs(%32 : tensor<1x56x56x64xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -233,7 +237,7 @@ module {
     } -> tensor<1x56x56x64xf32>
     %38 = tensor.empty() : tensor<1x56x56x256xf32>
     %39 = linalg.fill ins(%cst_0 : f32) outs(%38 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
-    %40 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%37, %cst_25 : tensor<1x56x56x64xf32>, tensor<1x1x64x256xf32>) outs(%39 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
+    %40 = linalg.conv_2d_nhwc_hwcf {metadata = "conv5", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%37, %cst_25 : tensor<1x56x56x64xf32>, tensor<1x1x64x256xf32>) outs(%39 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
     %41 = tensor.empty() : tensor<1x56x56x256xf32>
     %42 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_26 : tensor<256xf32>) outs(%41 : tensor<1x56x56x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -259,7 +263,7 @@ module {
     } -> tensor<1x56x56x256xf32>
     %49 = tensor.empty() : tensor<1x56x56x64xf32>
     %50 = linalg.fill ins(%cst_0 : f32) outs(%49 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
-    %51 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%48, %cst_27 : tensor<1x56x56x256xf32>, tensor<1x1x256x64xf32>) outs(%50 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
+    %51 = linalg.conv_2d_nhwc_hwcf {metadata = "conv6", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%48, %cst_27 : tensor<1x56x56x256xf32>, tensor<1x1x256x64xf32>) outs(%50 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
     %52 = tensor.empty() : tensor<1x56x56x64xf32>
     %53 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_28 : tensor<64xf32>) outs(%52 : tensor<1x56x56x64xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -283,7 +287,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x56x56x64xf32> to tensor<1x58x58x64xf32>
-    %60 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_127, %cst_29 : tensor<1x58x58x64xf32>, tensor<3x3x64x64xf32>) outs(%59 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
+    %60 = linalg.conv_2d_nhwc_hwcf {metadata = "conv7", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_127, %cst_29 : tensor<1x58x58x64xf32>, tensor<3x3x64x64xf32>) outs(%59 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
     %61 = tensor.empty() : tensor<1x56x56x64xf32>
     %62 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_30 : tensor<64xf32>) outs(%61 : tensor<1x56x56x64xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -303,7 +307,7 @@ module {
     } -> tensor<1x56x56x64xf32>
     %67 = tensor.empty() : tensor<1x56x56x256xf32>
     %68 = linalg.fill ins(%cst_0 : f32) outs(%67 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
-    %69 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%66, %cst_31 : tensor<1x56x56x64xf32>, tensor<1x1x64x256xf32>) outs(%68 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
+    %69 = linalg.conv_2d_nhwc_hwcf {metadata = "conv8", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%66, %cst_31 : tensor<1x56x56x64xf32>, tensor<1x1x64x256xf32>) outs(%68 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
     %70 = tensor.empty() : tensor<1x56x56x256xf32>
     %71 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_32 : tensor<256xf32>) outs(%70 : tensor<1x56x56x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -329,7 +333,7 @@ module {
     } -> tensor<1x56x56x256xf32>
     %78 = tensor.empty() : tensor<1x56x56x64xf32>
     %79 = linalg.fill ins(%cst_0 : f32) outs(%78 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
-    %80 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%77, %cst_33 : tensor<1x56x56x256xf32>, tensor<1x1x256x64xf32>) outs(%79 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
+    %80 = linalg.conv_2d_nhwc_hwcf {metadata = "conv9", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%77, %cst_33 : tensor<1x56x56x256xf32>, tensor<1x1x256x64xf32>) outs(%79 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
     %81 = tensor.empty() : tensor<1x56x56x64xf32>
     %82 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_34 : tensor<64xf32>) outs(%81 : tensor<1x56x56x64xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -353,7 +357,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x56x56x64xf32> to tensor<1x58x58x64xf32>
-    %89 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_128, %cst_35 : tensor<1x58x58x64xf32>, tensor<3x3x64x64xf32>) outs(%88 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
+    %89 = linalg.conv_2d_nhwc_hwcf {metadata = "conv10", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_128, %cst_35 : tensor<1x58x58x64xf32>, tensor<3x3x64x64xf32>) outs(%88 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
     %90 = tensor.empty() : tensor<1x56x56x64xf32>
     %91 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_36 : tensor<64xf32>) outs(%90 : tensor<1x56x56x64xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -373,7 +377,7 @@ module {
     } -> tensor<1x56x56x64xf32>
     %96 = tensor.empty() : tensor<1x56x56x256xf32>
     %97 = linalg.fill ins(%cst_0 : f32) outs(%96 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
-    %98 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%95, %cst_37 : tensor<1x56x56x64xf32>, tensor<1x1x64x256xf32>) outs(%97 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
+    %98 = linalg.conv_2d_nhwc_hwcf {metadata = "conv11", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%95, %cst_37 : tensor<1x56x56x64xf32>, tensor<1x1x64x256xf32>) outs(%97 : tensor<1x56x56x256xf32>) -> tensor<1x56x56x256xf32>
     %99 = tensor.empty() : tensor<1x56x56x256xf32>
     %100 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_38 : tensor<256xf32>) outs(%99 : tensor<1x56x56x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -399,7 +403,7 @@ module {
     } -> tensor<1x56x56x256xf32>
     %107 = tensor.empty() : tensor<1x28x28x512xf32>
     %108 = linalg.fill ins(%cst_0 : f32) outs(%107 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
-    %109 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%106, %cst_43 : tensor<1x56x56x256xf32>, tensor<1x1x256x512xf32>) outs(%108 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
+    %109 = linalg.conv_2d_nhwc_hwcf {metadata = "conv12", dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%106, %cst_43 : tensor<1x56x56x256xf32>, tensor<1x1x256x512xf32>) outs(%108 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
     %110 = tensor.empty() : tensor<1x28x28x512xf32>
     %111 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_44 : tensor<512xf32>) outs(%110 : tensor<1x28x28x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -413,7 +417,7 @@ module {
     } -> tensor<1x28x28x512xf32>
     %114 = tensor.empty() : tensor<1x28x28x128xf32>
     %115 = linalg.fill ins(%cst_0 : f32) outs(%114 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
-    %116 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%106, %cst_39 : tensor<1x56x56x256xf32>, tensor<1x1x256x128xf32>) outs(%115 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
+    %116 = linalg.conv_2d_nhwc_hwcf {metadata = "conv13", dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%106, %cst_39 : tensor<1x56x56x256xf32>, tensor<1x1x256x128xf32>) outs(%115 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
     %117 = tensor.empty() : tensor<1x28x28x128xf32>
     %118 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_40 : tensor<128xf32>) outs(%117 : tensor<1x28x28x128xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -437,7 +441,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x28x28x128xf32> to tensor<1x30x30x128xf32>
-    %125 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_129, %cst_41 : tensor<1x30x30x128xf32>, tensor<3x3x128x128xf32>) outs(%124 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
+    %125 = linalg.conv_2d_nhwc_hwcf {metadata = "conv14", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_129, %cst_41 : tensor<1x30x30x128xf32>, tensor<3x3x128x128xf32>) outs(%124 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
     %126 = tensor.empty() : tensor<1x28x28x128xf32>
     %127 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_42 : tensor<128xf32>) outs(%126 : tensor<1x28x28x128xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -457,7 +461,7 @@ module {
     } -> tensor<1x28x28x128xf32>
     %132 = tensor.empty() : tensor<1x28x28x512xf32>
     %133 = linalg.fill ins(%cst_0 : f32) outs(%132 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
-    %134 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%131, %cst_45 : tensor<1x28x28x128xf32>, tensor<1x1x128x512xf32>) outs(%133 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
+    %134 = linalg.conv_2d_nhwc_hwcf {metadata = "conv15", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%131, %cst_45 : tensor<1x28x28x128xf32>, tensor<1x1x128x512xf32>) outs(%133 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
     %135 = tensor.empty() : tensor<1x28x28x512xf32>
     %136 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_46 : tensor<512xf32>) outs(%135 : tensor<1x28x28x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -483,7 +487,7 @@ module {
     } -> tensor<1x28x28x512xf32>
     %143 = tensor.empty() : tensor<1x28x28x128xf32>
     %144 = linalg.fill ins(%cst_0 : f32) outs(%143 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
-    %145 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%142, %cst_47 : tensor<1x28x28x512xf32>, tensor<1x1x512x128xf32>) outs(%144 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
+    %145 = linalg.conv_2d_nhwc_hwcf {metadata = "conv16", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%142, %cst_47 : tensor<1x28x28x512xf32>, tensor<1x1x512x128xf32>) outs(%144 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
     %146 = tensor.empty() : tensor<1x28x28x128xf32>
     %147 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_48 : tensor<128xf32>) outs(%146 : tensor<1x28x28x128xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -507,7 +511,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x28x28x128xf32> to tensor<1x30x30x128xf32>
-    %154 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_130, %cst_49 : tensor<1x30x30x128xf32>, tensor<3x3x128x128xf32>) outs(%153 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
+    %154 = linalg.conv_2d_nhwc_hwcf {metadata = "conv17", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_130, %cst_49 : tensor<1x30x30x128xf32>, tensor<3x3x128x128xf32>) outs(%153 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
     %155 = tensor.empty() : tensor<1x28x28x128xf32>
     %156 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_50 : tensor<128xf32>) outs(%155 : tensor<1x28x28x128xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -527,7 +531,7 @@ module {
     } -> tensor<1x28x28x128xf32>
     %161 = tensor.empty() : tensor<1x28x28x512xf32>
     %162 = linalg.fill ins(%cst_0 : f32) outs(%161 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
-    %163 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%160, %cst_51 : tensor<1x28x28x128xf32>, tensor<1x1x128x512xf32>) outs(%162 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
+    %163 = linalg.conv_2d_nhwc_hwcf {metadata = "conv18", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%160, %cst_51 : tensor<1x28x28x128xf32>, tensor<1x1x128x512xf32>) outs(%162 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
     %164 = tensor.empty() : tensor<1x28x28x512xf32>
     %165 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_52 : tensor<512xf32>) outs(%164 : tensor<1x28x28x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -547,7 +551,7 @@ module {
     } -> tensor<1x28x28x512xf32>
     %170 = tensor.empty() : tensor<1x28x28x128xf32>
     %171 = linalg.fill ins(%cst_0 : f32) outs(%170 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
-    %172 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%169, %cst_53 : tensor<1x28x28x512xf32>, tensor<1x1x512x128xf32>) outs(%171 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
+    %172 = linalg.conv_2d_nhwc_hwcf {metadata = "conv19", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%169, %cst_53 : tensor<1x28x28x512xf32>, tensor<1x1x512x128xf32>) outs(%171 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
     %173 = tensor.empty() : tensor<1x28x28x128xf32>
     %174 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_54 : tensor<128xf32>) outs(%173 : tensor<1x28x28x128xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -571,7 +575,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x28x28x128xf32> to tensor<1x30x30x128xf32>
-    %181 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_131, %cst_55 : tensor<1x30x30x128xf32>, tensor<3x3x128x128xf32>) outs(%180 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
+    %181 = linalg.conv_2d_nhwc_hwcf {metadata = "conv20", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_131, %cst_55 : tensor<1x30x30x128xf32>, tensor<3x3x128x128xf32>) outs(%180 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
     %182 = tensor.empty() : tensor<1x28x28x128xf32>
     %183 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_56 : tensor<128xf32>) outs(%182 : tensor<1x28x28x128xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -591,7 +595,7 @@ module {
     } -> tensor<1x28x28x128xf32>
     %188 = tensor.empty() : tensor<1x28x28x512xf32>
     %189 = linalg.fill ins(%cst_0 : f32) outs(%188 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
-    %190 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%187, %cst_57 : tensor<1x28x28x128xf32>, tensor<1x1x128x512xf32>) outs(%189 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
+    %190 = linalg.conv_2d_nhwc_hwcf {metadata = "conv21", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%187, %cst_57 : tensor<1x28x28x128xf32>, tensor<1x1x128x512xf32>) outs(%189 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
     %191 = tensor.empty() : tensor<1x28x28x512xf32>
     %192 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_58 : tensor<512xf32>) outs(%191 : tensor<1x28x28x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -617,7 +621,7 @@ module {
     } -> tensor<1x28x28x512xf32>
     %199 = tensor.empty() : tensor<1x28x28x128xf32>
     %200 = linalg.fill ins(%cst_0 : f32) outs(%199 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
-    %201 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%198, %cst_59 : tensor<1x28x28x512xf32>, tensor<1x1x512x128xf32>) outs(%200 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
+    %201 = linalg.conv_2d_nhwc_hwcf {metadata = "conv22", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%198, %cst_59 : tensor<1x28x28x512xf32>, tensor<1x1x512x128xf32>) outs(%200 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
     %202 = tensor.empty() : tensor<1x28x28x128xf32>
     %203 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_60 : tensor<128xf32>) outs(%202 : tensor<1x28x28x128xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -641,7 +645,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x28x28x128xf32> to tensor<1x30x30x128xf32>
-    %210 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_132, %cst_61 : tensor<1x30x30x128xf32>, tensor<3x3x128x128xf32>) outs(%209 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
+    %210 = linalg.conv_2d_nhwc_hwcf {metadata = "conv23", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_132, %cst_61 : tensor<1x30x30x128xf32>, tensor<3x3x128x128xf32>) outs(%209 : tensor<1x28x28x128xf32>) -> tensor<1x28x28x128xf32>
     %211 = tensor.empty() : tensor<1x28x28x128xf32>
     %212 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_62 : tensor<128xf32>) outs(%211 : tensor<1x28x28x128xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -661,7 +665,7 @@ module {
     } -> tensor<1x28x28x128xf32>
     %217 = tensor.empty() : tensor<1x28x28x512xf32>
     %218 = linalg.fill ins(%cst_0 : f32) outs(%217 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
-    %219 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%216, %cst_63 : tensor<1x28x28x128xf32>, tensor<1x1x128x512xf32>) outs(%218 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
+    %219 = linalg.conv_2d_nhwc_hwcf {metadata = "conv24", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%216, %cst_63 : tensor<1x28x28x128xf32>, tensor<1x1x128x512xf32>) outs(%218 : tensor<1x28x28x512xf32>) -> tensor<1x28x28x512xf32>
     %220 = tensor.empty() : tensor<1x28x28x512xf32>
     %221 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_64 : tensor<512xf32>) outs(%220 : tensor<1x28x28x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -687,7 +691,7 @@ module {
     } -> tensor<1x28x28x512xf32>
     %228 = tensor.empty() : tensor<1x14x14x1024xf32>
     %229 = linalg.fill ins(%cst_0 : f32) outs(%228 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
-    %230 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%227, %cst_69 : tensor<1x28x28x512xf32>, tensor<1x1x512x1024xf32>) outs(%229 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
+    %230 = linalg.conv_2d_nhwc_hwcf {metadata = "conv25", dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%227, %cst_69 : tensor<1x28x28x512xf32>, tensor<1x1x512x1024xf32>) outs(%229 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
     %231 = tensor.empty() : tensor<1x14x14x1024xf32>
     %232 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_70 : tensor<1024xf32>) outs(%231 : tensor<1x14x14x1024xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -701,7 +705,7 @@ module {
     } -> tensor<1x14x14x1024xf32>
     %235 = tensor.empty() : tensor<1x14x14x256xf32>
     %236 = linalg.fill ins(%cst_0 : f32) outs(%235 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
-    %237 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%227, %cst_65 : tensor<1x28x28x512xf32>, tensor<1x1x512x256xf32>) outs(%236 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %237 = linalg.conv_2d_nhwc_hwcf {metadata = "conv26", dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%227, %cst_65 : tensor<1x28x28x512xf32>, tensor<1x1x512x256xf32>) outs(%236 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %238 = tensor.empty() : tensor<1x14x14x256xf32>
     %239 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_66 : tensor<256xf32>) outs(%238 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -725,7 +729,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x14x14x256xf32> to tensor<1x16x16x256xf32>
-    %246 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_133, %cst_67 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%245 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %246 = linalg.conv_2d_nhwc_hwcf {metadata = "conv27", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_133, %cst_67 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%245 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %247 = tensor.empty() : tensor<1x14x14x256xf32>
     %248 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_68 : tensor<256xf32>) outs(%247 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -745,7 +749,7 @@ module {
     } -> tensor<1x14x14x256xf32>
     %253 = tensor.empty() : tensor<1x14x14x1024xf32>
     %254 = linalg.fill ins(%cst_0 : f32) outs(%253 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
-    %255 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%252, %cst_71 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%254 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
+    %255 = linalg.conv_2d_nhwc_hwcf {metadata = "conv28", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%252, %cst_71 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%254 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
     %256 = tensor.empty() : tensor<1x14x14x1024xf32>
     %257 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_72 : tensor<1024xf32>) outs(%256 : tensor<1x14x14x1024xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -771,7 +775,7 @@ module {
     } -> tensor<1x14x14x1024xf32>
     %264 = tensor.empty() : tensor<1x14x14x256xf32>
     %265 = linalg.fill ins(%cst_0 : f32) outs(%264 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
-    %266 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%263, %cst_73 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%265 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %266 = linalg.conv_2d_nhwc_hwcf {metadata = "conv29", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%263, %cst_73 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%265 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %267 = tensor.empty() : tensor<1x14x14x256xf32>
     %268 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_74 : tensor<256xf32>) outs(%267 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -795,7 +799,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x14x14x256xf32> to tensor<1x16x16x256xf32>
-    %275 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_134, %cst_75 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%274 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %275 = linalg.conv_2d_nhwc_hwcf {metadata = "conv30", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_134, %cst_75 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%274 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %276 = tensor.empty() : tensor<1x14x14x256xf32>
     %277 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_76 : tensor<256xf32>) outs(%276 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -815,7 +819,7 @@ module {
     } -> tensor<1x14x14x256xf32>
     %282 = tensor.empty() : tensor<1x14x14x1024xf32>
     %283 = linalg.fill ins(%cst_0 : f32) outs(%282 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
-    %284 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%281, %cst_77 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%283 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
+    %284 = linalg.conv_2d_nhwc_hwcf {metadata = "conv31", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%281, %cst_77 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%283 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
     %285 = tensor.empty() : tensor<1x14x14x1024xf32>
     %286 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_78 : tensor<1024xf32>) outs(%285 : tensor<1x14x14x1024xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -841,7 +845,7 @@ module {
     } -> tensor<1x14x14x1024xf32>
     %293 = tensor.empty() : tensor<1x14x14x256xf32>
     %294 = linalg.fill ins(%cst_0 : f32) outs(%293 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
-    %295 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%292, %cst_79 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%294 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %295 = linalg.conv_2d_nhwc_hwcf {metadata = "conv32", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%292, %cst_79 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%294 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %296 = tensor.empty() : tensor<1x14x14x256xf32>
     %297 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_80 : tensor<256xf32>) outs(%296 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -865,7 +869,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x14x14x256xf32> to tensor<1x16x16x256xf32>
-    %304 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_135, %cst_81 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%303 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %304 = linalg.conv_2d_nhwc_hwcf {metadata = "conv33", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_135, %cst_81 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%303 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %305 = tensor.empty() : tensor<1x14x14x256xf32>
     %306 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_82 : tensor<256xf32>) outs(%305 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -885,7 +889,7 @@ module {
     } -> tensor<1x14x14x256xf32>
     %311 = tensor.empty() : tensor<1x14x14x1024xf32>
     %312 = linalg.fill ins(%cst_0 : f32) outs(%311 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
-    %313 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%310, %cst_83 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%312 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
+    %313 = linalg.conv_2d_nhwc_hwcf {metadata = "conv34", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%310, %cst_83 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%312 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
     %314 = tensor.empty() : tensor<1x14x14x1024xf32>
     %315 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_84 : tensor<1024xf32>) outs(%314 : tensor<1x14x14x1024xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -911,7 +915,7 @@ module {
     } -> tensor<1x14x14x1024xf32>
     %322 = tensor.empty() : tensor<1x14x14x256xf32>
     %323 = linalg.fill ins(%cst_0 : f32) outs(%322 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
-    %324 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%321, %cst_85 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%323 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %324 = linalg.conv_2d_nhwc_hwcf {metadata = "conv35", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%321, %cst_85 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%323 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %325 = tensor.empty() : tensor<1x14x14x256xf32>
     %326 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_86 : tensor<256xf32>) outs(%325 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -935,7 +939,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x14x14x256xf32> to tensor<1x16x16x256xf32>
-    %333 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_136, %cst_87 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%332 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %333 = linalg.conv_2d_nhwc_hwcf {metadata = "conv36", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_136, %cst_87 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%332 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %334 = tensor.empty() : tensor<1x14x14x256xf32>
     %335 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_88 : tensor<256xf32>) outs(%334 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -955,7 +959,7 @@ module {
     } -> tensor<1x14x14x256xf32>
     %340 = tensor.empty() : tensor<1x14x14x1024xf32>
     %341 = linalg.fill ins(%cst_0 : f32) outs(%340 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
-    %342 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%339, %cst_89 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%341 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
+    %342 = linalg.conv_2d_nhwc_hwcf {metadata = "conv37", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%339, %cst_89 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%341 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
     %343 = tensor.empty() : tensor<1x14x14x1024xf32>
     %344 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_90 : tensor<1024xf32>) outs(%343 : tensor<1x14x14x1024xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -981,7 +985,7 @@ module {
     } -> tensor<1x14x14x1024xf32>
     %351 = tensor.empty() : tensor<1x14x14x256xf32>
     %352 = linalg.fill ins(%cst_0 : f32) outs(%351 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
-    %353 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%350, %cst_91 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%352 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %353 = linalg.conv_2d_nhwc_hwcf {metadata = "conv38", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%350, %cst_91 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%352 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %354 = tensor.empty() : tensor<1x14x14x256xf32>
     %355 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_92 : tensor<256xf32>) outs(%354 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1005,7 +1009,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x14x14x256xf32> to tensor<1x16x16x256xf32>
-    %362 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_137, %cst_93 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%361 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %362 = linalg.conv_2d_nhwc_hwcf {metadata = "conv39", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_137, %cst_93 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%361 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %363 = tensor.empty() : tensor<1x14x14x256xf32>
     %364 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_94 : tensor<256xf32>) outs(%363 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1025,7 +1029,7 @@ module {
     } -> tensor<1x14x14x256xf32>
     %369 = tensor.empty() : tensor<1x14x14x1024xf32>
     %370 = linalg.fill ins(%cst_0 : f32) outs(%369 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
-    %371 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%368, %cst_95 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%370 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
+    %371 = linalg.conv_2d_nhwc_hwcf {metadata = "conv40", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%368, %cst_95 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%370 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
     %372 = tensor.empty() : tensor<1x14x14x1024xf32>
     %373 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_96 : tensor<1024xf32>) outs(%372 : tensor<1x14x14x1024xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1051,7 +1055,7 @@ module {
     } -> tensor<1x14x14x1024xf32>
     %380 = tensor.empty() : tensor<1x14x14x256xf32>
     %381 = linalg.fill ins(%cst_0 : f32) outs(%380 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
-    %382 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%379, %cst_97 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%381 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %382 = linalg.conv_2d_nhwc_hwcf {metadata = "conv41", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%379, %cst_97 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x256xf32>) outs(%381 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %383 = tensor.empty() : tensor<1x14x14x256xf32>
     %384 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_98 : tensor<256xf32>) outs(%383 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1075,7 +1079,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x14x14x256xf32> to tensor<1x16x16x256xf32>
-    %391 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_138, %cst_99 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%390 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
+    %391 = linalg.conv_2d_nhwc_hwcf {metadata = "conv42", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_138, %cst_99 : tensor<1x16x16x256xf32>, tensor<3x3x256x256xf32>) outs(%390 : tensor<1x14x14x256xf32>) -> tensor<1x14x14x256xf32>
     %392 = tensor.empty() : tensor<1x14x14x256xf32>
     %393 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_100 : tensor<256xf32>) outs(%392 : tensor<1x14x14x256xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1095,7 +1099,7 @@ module {
     } -> tensor<1x14x14x256xf32>
     %398 = tensor.empty() : tensor<1x14x14x1024xf32>
     %399 = linalg.fill ins(%cst_0 : f32) outs(%398 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
-    %400 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%397, %cst_101 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%399 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
+    %400 = linalg.conv_2d_nhwc_hwcf {metadata = "conv43", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%397, %cst_101 : tensor<1x14x14x256xf32>, tensor<1x1x256x1024xf32>) outs(%399 : tensor<1x14x14x1024xf32>) -> tensor<1x14x14x1024xf32>
     %401 = tensor.empty() : tensor<1x14x14x1024xf32>
     %402 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_102 : tensor<1024xf32>) outs(%401 : tensor<1x14x14x1024xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1121,7 +1125,7 @@ module {
     } -> tensor<1x14x14x1024xf32>
     %409 = tensor.empty() : tensor<1x7x7x2048xf32>
     %410 = linalg.fill ins(%cst_0 : f32) outs(%409 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
-    %411 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%408, %cst_107 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x2048xf32>) outs(%410 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
+    %411 = linalg.conv_2d_nhwc_hwcf {metadata = "conv44", dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%408, %cst_107 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x2048xf32>) outs(%410 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
     %412 = tensor.empty() : tensor<1x7x7x2048xf32>
     %413 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_108 : tensor<2048xf32>) outs(%412 : tensor<1x7x7x2048xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1135,7 +1139,7 @@ module {
     } -> tensor<1x7x7x2048xf32>
     %416 = tensor.empty() : tensor<1x7x7x512xf32>
     %417 = linalg.fill ins(%cst_0 : f32) outs(%416 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
-    %418 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%408, %cst_103 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x512xf32>) outs(%417 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
+    %418 = linalg.conv_2d_nhwc_hwcf {metadata = "conv45", dilations = dense<1> : tensor<2xi64>, strides = dense<2> : tensor<2xi64>} ins(%408, %cst_103 : tensor<1x14x14x1024xf32>, tensor<1x1x1024x512xf32>) outs(%417 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
     %419 = tensor.empty() : tensor<1x7x7x512xf32>
     %420 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_104 : tensor<512xf32>) outs(%419 : tensor<1x7x7x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1159,7 +1163,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x7x7x512xf32> to tensor<1x9x9x512xf32>
-    %427 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_139, %cst_105 : tensor<1x9x9x512xf32>, tensor<3x3x512x512xf32>) outs(%426 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
+    %427 = linalg.conv_2d_nhwc_hwcf {metadata = "conv46", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_139, %cst_105 : tensor<1x9x9x512xf32>, tensor<3x3x512x512xf32>) outs(%426 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
     %428 = tensor.empty() : tensor<1x7x7x512xf32>
     %429 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_106 : tensor<512xf32>) outs(%428 : tensor<1x7x7x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1179,7 +1183,7 @@ module {
     } -> tensor<1x7x7x512xf32>
     %434 = tensor.empty() : tensor<1x7x7x2048xf32>
     %435 = linalg.fill ins(%cst_0 : f32) outs(%434 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
-    %436 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%433, %cst_109 : tensor<1x7x7x512xf32>, tensor<1x1x512x2048xf32>) outs(%435 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
+    %436 = linalg.conv_2d_nhwc_hwcf {metadata = "conv47", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%433, %cst_109 : tensor<1x7x7x512xf32>, tensor<1x1x512x2048xf32>) outs(%435 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
     %437 = tensor.empty() : tensor<1x7x7x2048xf32>
     %438 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_110 : tensor<2048xf32>) outs(%437 : tensor<1x7x7x2048xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1205,7 +1209,7 @@ module {
     } -> tensor<1x7x7x2048xf32>
     %445 = tensor.empty() : tensor<1x7x7x512xf32>
     %446 = linalg.fill ins(%cst_0 : f32) outs(%445 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
-    %447 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%444, %cst_111 : tensor<1x7x7x2048xf32>, tensor<1x1x2048x512xf32>) outs(%446 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
+    %447 = linalg.conv_2d_nhwc_hwcf {metadata = "conv48", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%444, %cst_111 : tensor<1x7x7x2048xf32>, tensor<1x1x2048x512xf32>) outs(%446 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
     %448 = tensor.empty() : tensor<1x7x7x512xf32>
     %449 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_112 : tensor<512xf32>) outs(%448 : tensor<1x7x7x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1229,7 +1233,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x7x7x512xf32> to tensor<1x9x9x512xf32>
-    %456 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_140, %cst_113 : tensor<1x9x9x512xf32>, tensor<3x3x512x512xf32>) outs(%455 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
+    %456 = linalg.conv_2d_nhwc_hwcf {metadata = "conv49", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_140, %cst_113 : tensor<1x9x9x512xf32>, tensor<3x3x512x512xf32>) outs(%455 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
     %457 = tensor.empty() : tensor<1x7x7x512xf32>
     %458 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_114 : tensor<512xf32>) outs(%457 : tensor<1x7x7x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1249,7 +1253,7 @@ module {
     } -> tensor<1x7x7x512xf32>
     %463 = tensor.empty() : tensor<1x7x7x2048xf32>
     %464 = linalg.fill ins(%cst_0 : f32) outs(%463 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
-    %465 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%462, %cst_115 : tensor<1x7x7x512xf32>, tensor<1x1x512x2048xf32>) outs(%464 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
+    %465 = linalg.conv_2d_nhwc_hwcf {metadata = "conv50", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%462, %cst_115 : tensor<1x7x7x512xf32>, tensor<1x1x512x2048xf32>) outs(%464 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
     %466 = tensor.empty() : tensor<1x7x7x2048xf32>
     %467 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_116 : tensor<2048xf32>) outs(%466 : tensor<1x7x7x2048xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1275,7 +1279,7 @@ module {
     } -> tensor<1x7x7x2048xf32>
     %474 = tensor.empty() : tensor<1x7x7x512xf32>
     %475 = linalg.fill ins(%cst_0 : f32) outs(%474 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
-    %476 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%473, %cst_117 : tensor<1x7x7x2048xf32>, tensor<1x1x2048x512xf32>) outs(%475 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
+    %476 = linalg.conv_2d_nhwc_hwcf {metadata = "conv51", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%473, %cst_117 : tensor<1x7x7x2048xf32>, tensor<1x1x2048x512xf32>) outs(%475 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
     %477 = tensor.empty() : tensor<1x7x7x512xf32>
     %478 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_118 : tensor<512xf32>) outs(%477 : tensor<1x7x7x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1299,7 +1303,7 @@ module {
     ^bb0(%arg1: index, %arg2: index, %arg3: index, %arg4: index):
       tensor.yield %cst_0 : f32
     } : tensor<1x7x7x512xf32> to tensor<1x9x9x512xf32>
-    %485 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_141, %cst_119 : tensor<1x9x9x512xf32>, tensor<3x3x512x512xf32>) outs(%484 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
+    %485 = linalg.conv_2d_nhwc_hwcf {metadata = "conv52", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%padded_141, %cst_119 : tensor<1x9x9x512xf32>, tensor<3x3x512x512xf32>) outs(%484 : tensor<1x7x7x512xf32>) -> tensor<1x7x7x512xf32>
     %486 = tensor.empty() : tensor<1x7x7x512xf32>
     %487 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_120 : tensor<512xf32>) outs(%486 : tensor<1x7x7x512xf32>) {
     ^bb0(%in: f32, %out: f32):
@@ -1319,7 +1323,7 @@ module {
     } -> tensor<1x7x7x512xf32>
     %492 = tensor.empty() : tensor<1x7x7x2048xf32>
     %493 = linalg.fill ins(%cst_0 : f32) outs(%492 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
-    %494 = linalg.conv_2d_nhwc_hwcf {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%491, %cst_121 : tensor<1x7x7x512xf32>, tensor<1x1x512x2048xf32>) outs(%493 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
+    %494 = linalg.conv_2d_nhwc_hwcf {metadata = "conv53", dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%491, %cst_121 : tensor<1x7x7x512xf32>, tensor<1x1x512x2048xf32>) outs(%493 : tensor<1x7x7x2048xf32>) -> tensor<1x7x7x2048xf32>
     %495 = tensor.empty() : tensor<1x7x7x2048xf32>
     %496 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%cst_122 : tensor<2048xf32>) outs(%495 : tensor<1x7x7x2048xf32>) {
     ^bb0(%in: f32, %out: f32):

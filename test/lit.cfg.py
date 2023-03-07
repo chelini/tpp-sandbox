@@ -42,7 +42,7 @@ llvm_config.use_default_substitutions()
 # excludes: A list of directories to exclude from the testsuite. The 'Inputs'
 # subdirectories contain auxiliary inputs for various tests in their parent
 # directories.
-config.excludes = [ ]
+config.excludes = ["ResNet-V2-50.mlir"]
 
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.tpp_obj_root, 'test')

@@ -223,7 +223,7 @@ def TileConsumerAndFuseProducers : Pass<"tile-consumer-and-fuse-producers",
            "Get producers till maxDepth">,
     Option<"startFromLastFusableConsumer", "start-from-last-consumer", "bool",
            "true", "Fuse from the last fusable consumer of the current target">,
-    Option<"useForAll", "use-for-all", "bool", "false", "Use parallel forAll">
+    Option<"useForAll", "use-for-all", "bool", "true", "Use parallel forAll">
   ];
 }
 
@@ -308,6 +308,16 @@ def ConvInitSimplify : Pass<"conv-init-simplify", "func::FuncOp"> {
 def Bufferize : Pass<"bufferize", "ModuleOp"> {
   let summary = "Bufferize tensor to memref for the entire module";
   let constructor = "mlir::tpp::createBufferizePass()";
+}
+
+def ConvertForAllToParallelOp : Pass<"convert-forall-to-parallel", 
+                                     "func::FuncOp"> {
+  let summary = "Convert scf.forall to scf.parallel";
+  let description = [{
+    Rewrite an scf.forall to scf.parallel after bufferization.
+    Requires scf.forall to be a normalized loop.
+  }];
+  let constructor = "mlir::tpp::createConvertForAllToParallelOpPass()";
 }
 
 #endif // TPP_DIALECT_TPP_PASSES

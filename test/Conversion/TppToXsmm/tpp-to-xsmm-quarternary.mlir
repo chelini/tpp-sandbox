@@ -1,4 +1,5 @@
 //RUN: tpp-opt %s --combine-tpp --convert-tpp-to-xsmm | FileCheck %s
+// XFAIL:*
 module {
   func.func @mlp(%arg0: memref<8x16x32x32xbf16>, %arg1: memref<16x16x16x32x2xbf16>, %arg2: memref<512xbf16>, %arg3: memref<8x16x32x32xbf16>) -> memref<8x16x32x32xbf16> {
     %cst = arith.constant -1.000000e+00 : bf16

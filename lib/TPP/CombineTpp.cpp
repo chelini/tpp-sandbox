@@ -24,17 +24,17 @@ template <typename OpTy>
 struct CombineBrgemmWithOptionalBinaryAndUnary : public OpRewritePattern<OpTy> {
   using OpRewritePattern<OpTy>::OpRewritePattern;
 
-  FailureOr<tpp::FusedUnaryOpTypeAttr>
+  FailureOr<tpp::FusedUnaryOpKindAttr>
   getFusedUnaryAttr(Operation *operation, MLIRContext *ctx) const {
     if (isa<tpp::ReluOp>(operation))
-      return tpp::FusedUnaryOpTypeAttr::get(ctx, tpp::FusedUnaryOpType::RELU);
+      return tpp::FusedUnaryOpKindAttr::get(ctx, tpp::FusedUnaryOpKind::RELU);
     return failure();
   }
 
-  FailureOr<tpp::FusedBinaryOpTypeAttr>
+  FailureOr<tpp::FusedBinaryOpKindAttr>
   getFusedBinaryAttr(Operation *operation, MLIRContext *ctx) const {
     if (isa<tpp::AddOp>(operation))
-      return tpp::FusedBinaryOpTypeAttr::get(ctx, tpp::FusedBinaryOpType::ADD);
+      return tpp::FusedBinaryOpKindAttr::get(ctx, tpp::FusedBinaryOpKind::ADD);
     return failure();
   }
 

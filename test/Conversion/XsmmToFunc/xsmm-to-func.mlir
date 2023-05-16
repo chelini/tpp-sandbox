@@ -222,3 +222,33 @@ func.func @invoke_inplace_relu(%arg0: memref<128x512xbf16>) {
 // CHECK-NEXT: %[[PTR_CAST1:.+]] = arith.index_cast %[[PTR1]] : index to i64
 // CHECK-NEXT: %[[LLVM_PTR1:.+]] = llvm.inttoptr %[[PTR_CAST1]] : i64 to !llvm.ptr<bf16>
 // CHECK: call @xsmm_unary_invoke(%[[C2]], %[[ADDR]], %[[LLVM_PTR]], %[[C0]], %[[LLVM_PTR1]], %[[C0]])
+
+// -----
+
+func.func @dispatch_fused_brgemm() -> i64 { 
+  %0 = xsmm.fused_brgemm.dispatch [13, 13, 13, 13, 13, 13] [add, relu]
+    flags = (vnni_a) binary_flags = (bcast_col_in0) unary_flags = (none) data_type = bf16
+  return %0 : i64
+}
+
+// CHECK-LABEL: dispatch_fused_brgemm
+// CHECK: %[[DATA_TYPE:.+]] = arith.constant 2 : i64
+// CHECK-DAG: %[[DIM:.+]] = arith.constant 13 : i64
+// CHECK-DAG: %[[GEMM_FLAGS:.+]] = arith.constant 4096 : i64
+// CHECK-DAG: %[[UNARY_FLAGS:.+]] = arith.constant 0 : i64
+// CHECK-DAG: %[[UNARY_KIND:.+]] = arith.constant 5 : i64
+// CHECK-DAG: %[[BINARY_FLAGS:.+]] = arith.constant 4 : i64
+// CHECK-DAG: %[[BINARY_KIND:.+]] = arith.constant 1 : i64
+// CHECK: %{{.+}} = call @xsmm_fused_brgemm_dispatch(%[[DATA_TYPE]], %[[DIM]], %[[DIM]], %[[DIM]], %[[DIM]], %[[DIM]], %[[DIM]], %[[GEMM_FLAGS]], %[[UNARY_FLAGS]], %[[UNARY_KIND]], %[[BINARY_FLAGS]], %[[BINARY_KIND]])
+
+// -----
+
+// Current limitation in LIBXSMM we can use only bcast_col_in0 as flag for binary.
+// see: https://github.com/libxsmm/libxsmm/issues/766
+// CHECK-LABEL: dispatch_fused_brgemm
+// CHECK-NOT: xsmm_fused_brgemm_dispatch
+func.func @dispatch_fused_brgemm() -> i64 { 
+  %0 = xsmm.fused_brgemm.dispatch [13, 13, 13, 13, 13, 13] [add, relu]
+    flags = (vnni_a) binary_flags = (none) unary_flags = (none) data_type = bf16
+  return %0 : i64
+}

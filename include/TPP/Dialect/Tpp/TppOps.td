@@ -329,15 +329,18 @@ def Tpp_FusedBrgemmOp : Tpp_QuaternaryOp<"fused_brgemm"> {
 
   let arguments = (ins Variadic<TppGemmLikeOperand>:$inputs,
                        Variadic<TppGemmLikeOperand>:$outputs, 
-                       Tpp_FusedUnaryOpType:$unary_type,
-                       Tpp_FusedBinaryOpType:$binary_type);
+                       Tpp_FusedUnaryOpKind:$unary_kind,
+                       Tpp_FusedBinaryOpKind:$binary_kind);
 
   let builders = [
     OpBuilder<(ins "ValueRange":$inputs, "Value":$output, 
-                   "FusedUnaryOpTypeAttr":$unary_type,
-                   "FusedBinaryOpTypeAttr":$binary_type)>
+                   "FusedUnaryOpKindAttr":$unary_type,
+                   "FusedBinaryOpKindAttr":$binary_type)>
   ];
-
+  let extraClassDeclaration = [{
+    // Get the operand to be used as input to the binary operation.
+    Value getBinaryOperand() { return getInputs()[3]; };
+  }];
   let hasVerifier = 1;
 }
 

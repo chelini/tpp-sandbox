@@ -195,3 +195,43 @@ func.func @ternary_dispatch() -> i64 {
   %0 = xsmm.ternary.dispatch none [3, 2, 1] flags = (none) data_type = f32
   return %0 : i64
 }
+
+// -----
+
+// CHECK-LABEL: func.func @fused_dispatch
+func.func @fused_dispatch() -> i64 {
+  // expected-error@+1 {{op expect 6 args but got: 3}}
+  %0 = xsmm.fused_brgemm.dispatch [3, 2, 1] [add, relu] 
+    flags = (none) binary_flags = (none) unary_flags = (none) data_type = f32
+  return %0 : i64
+}
+
+// -----
+
+// CHECK-LABEL: func.func @fused_dispatch
+func.func @fused_dispatch() -> i64 {
+  // expected-error@+1 {{op expected flags to be unique}}
+  %0 = xsmm.fused_brgemm.dispatch [3, 2, 1, 1, 1, 1] [add, relu] 
+    flags = (vnni_a, vnni_a) binary_flags = (none) unary_flags = (none) data_type = bf16
+  return %0 : i64
+}
+
+// -----
+
+// CHECK-LABEL: func.func @fused_dispatch
+func.func @fused_dispatch() -> i64 {
+  // expected-error@+1 {{op expected binary_flags to be unique}}
+  %0 = xsmm.fused_brgemm.dispatch [3, 2, 1, 1, 1, 1] [add, relu] 
+    flags = (vnni_a) binary_flags = (none, none) unary_flags = (none) data_type = bf16
+  return %0 : i64
+}
+
+// -----
+
+// CHECK-LABEL: func.func @fused_dispatch
+func.func @fused_dispatch() -> i64 {
+  // expected-error@+1 {{op expected unary_flags to be unique}}
+  %0 = xsmm.fused_brgemm.dispatch [3, 2, 1, 1, 1, 1] [add, relu] 
+    flags = (vnni_a) binary_flags = (none) unary_flags = (none, none) data_type = bf16
+  return %0 : i64
+}

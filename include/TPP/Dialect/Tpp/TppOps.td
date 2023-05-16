@@ -322,7 +322,7 @@ def Tpp_FusedBrgemmOp : Tpp_QuaternaryOp<"fused_brgemm"> {
 
       tpp.fused_brgemm [unary = relu, binary = add] 
                        ins(%1: memref<3x6x4xf32>, %2: memref<3x4x4xf32>, 
-                           %3: memref<4xf32>, %4: i64)
+                           %3: memref<4xf32>, %4: memref<6x4xf32>)
                        outs(%5: memref<6x4xf32>)
     ```
   }];

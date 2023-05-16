@@ -20,21 +20,42 @@ using namespace mlir;
 
 namespace {
 
-struct CombineBrgemmAddAndRelu : public OpRewritePattern<tpp::ReluOp> {
-  using OpRewritePattern<tpp::ReluOp>::OpRewritePattern;
+template <typename OpTy>
+struct CombineBrgemmWithOptionalBinaryAndUnary : public OpRewritePattern<OpTy> {
+  using OpRewritePattern<OpTy>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(tpp::ReluOp reluOp,
+  FailureOr<tpp::FusedUnaryOpTypeAttr>
+  getFusedUnaryAttr(Operation *operation, MLIRContext *ctx) const {
+    if (isa<tpp::ReluOp>(operation))
+      return tpp::FusedUnaryOpTypeAttr::get(ctx, tpp::FusedUnaryOpType::RELU);
+    return failure();
+  }
+
+  FailureOr<tpp::FusedBinaryOpTypeAttr>
+  getFusedBinaryAttr(Operation *operation, MLIRContext *ctx) const {
+    if (isa<tpp::AddOp>(operation))
+      return tpp::FusedBinaryOpTypeAttr::get(ctx, tpp::FusedBinaryOpType::ADD);
+    return failure();
+  }
+
+  LogicalResult matchAndRewrite(OpTy unaryOp,
                                 PatternRewriter &rewriter) const override {
-    if (!reluOp.hasTensorSemantics())
+    if (!isa<tpp::TppOp>(unaryOp.getOperation()))
       return failure();
-    Value operandRelu = reluOp.getInputs()[0];
-    auto maybeAdd = operandRelu.getDefiningOp<tpp::AddOp>();
-    if (!maybeAdd)
+    auto tppUnaryOp = cast<tpp::TppOp>(unaryOp.getOperation());
+    if (!tppUnaryOp.hasTensorSemantics() || !tppUnaryOp.isUnary())
       return failure();
+
+    Value operandUnary = tppUnaryOp.getInputs()[0];
+    auto tppBinaryOp = operandUnary.getDefiningOp();
+    if (!isa<tpp::TppOp>(tppBinaryOp) ||
+        !cast<tpp::TppOp>(tppBinaryOp).isBinary())
+      return failure();
+
     SmallVector<Value> brgemmOperands;
     Value addOperand;
     bool hasBrgemmProducer = false;
-    for (Value operand : maybeAdd.getInputs()) {
+    for (Value operand : cast<tpp::TppOp>(tppBinaryOp).getInputs()) {
       if (auto brgemmOp = operand.getDefiningOp<tpp::BrgemmOp>()) {
         brgemmOperands = brgemmOp.getInputs();
         hasBrgemmProducer = true;
@@ -44,20 +65,22 @@ struct CombineBrgemmAddAndRelu : public OpRewritePattern<tpp::ReluOp> {
     }
     if (!hasBrgemmProducer)
       return failure();
+    Value outputBrgemm = brgemmOperands[brgemmOperands.size() - 1];
     brgemmOperands.push_back(addOperand);
     auto ctx = rewriter.getContext();
-    auto unaryType =
-        tpp::FusedUnaryOpTypeAttr::get(ctx, tpp::FusedUnaryOpType::RELU);
-    auto binaryType =
-        tpp::FusedBinaryOpTypeAttr::get(ctx, tpp::FusedBinaryOpType::ADD);
+    auto unaryType = getFusedUnaryAttr(tppUnaryOp, ctx);
+    auto binaryType = getFusedBinaryAttr(tppBinaryOp, ctx);
+    if (failed(unaryType) || failed(binaryType))
+      return failure();
     rewriter.replaceOpWithNewOp<tpp::FusedBrgemmOp>(
-        reluOp, brgemmOperands, addOperand, unaryType, binaryType);
+        unaryOp, brgemmOperands, outputBrgemm, *unaryType, *binaryType);
     return success();
   }
 };
 
 void populatePatterns(RewritePatternSet &patterns) {
-  patterns.add<CombineBrgemmAddAndRelu>(patterns.getContext());
+  patterns.add<CombineBrgemmWithOptionalBinaryAndUnary<tpp::ReluOp>>(
+      patterns.getContext());
 }
 
 struct CombineTppOps : public CombineTppOpsBase<CombineTppOps> {

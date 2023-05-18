@@ -46,7 +46,6 @@ def UnitStrideInnerLoop : NativeOpTrait<"tpp::UnitStrideInnerLoop">;
 def UnaryOp : NativeOpTrait<"tpp::UnaryOp">;
 def BinaryOp : NativeOpTrait<"tpp::BinaryOp">;
 def TernaryOp : NativeOpTrait<"tpp::TernaryOp">;
-def QuaternaryOp : NativeOpTrait<"tpp::QuaternaryOp">;
 
 //===----------------------------------------------------------------------===//
 // Base operation definition.

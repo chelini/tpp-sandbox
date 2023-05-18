@@ -152,15 +152,16 @@ static LogicalResult verifyArityImpl(Operation *op, unsigned numInput,
       OpTrait::AttrSizedOperandSegments<void>::getOperandSegmentSizeAttr();
   ArrayRef<int> sizeAttr =
       op->template getAttrOfType<DenseI32ArrayAttr>(attrName).asArrayRef();
-  if (sizeAttr.empty() || sizeAttr.size() != 2)
+  if (sizeAttr.empty() || (sizeAttr.size() != 2 && sizeAttr.size() != 3))
     return op->emitError("invalid operand segment size");
   if (sizeAttr[0] != static_cast<int>(numInput)) {
     return op->emitError() << "expect " << numInput
                            << " input operands, but got: " << sizeAttr[0];
   }
-  if (sizeAttr[1] != static_cast<int>(numOutput)) {
+  if (sizeAttr[sizeAttr.size() - 1] != static_cast<int>(numOutput)) {
     return op->emitError() << "expect " << numOutput
-                           << " output operands, but got: " << sizeAttr[1];
+                           << " output operands, but got: "
+                           << sizeAttr[sizeAttr.size() - 1];
   }
   return success();
 }

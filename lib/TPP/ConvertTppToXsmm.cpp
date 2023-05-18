@@ -248,8 +248,7 @@ struct ConvertTppFusedBrgemmOp : public OpRewritePattern<tpp::FusedBrgemmOp> {
 
   ArrayAttr getBinaryFlags(RewriterBase &rewriter,
                            tpp::FusedBrgemmOp brgemmOp) const {
-    auto binaryInputType =
-        brgemmOp.getBinaryOperand().getType().cast<MemRefType>();
+    auto binaryInputType = brgemmOp.getBiasInput().getType().cast<MemRefType>();
     auto outputType = brgemmOp.getOutputType();
     return rewriter.getArrayAttr(xsmm::BinaryFlagsAttr::get(
         rewriter.getContext(),

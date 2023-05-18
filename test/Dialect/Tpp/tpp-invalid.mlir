@@ -376,3 +376,21 @@ func.func @tied_type_result_to_arg2(%arg0: tensor<32x32xf32>,
                  %arg2: tensor<1x32xf32>) -> tensor<32x32xf32>
   return %0: tensor<32x32xf32>
 }
+
+// -----
+
+func.func @fused_invalid_operands(%arg0: tensor<3x32x32xf32>, %arg1: tensor<3x32x32xf32>) -> tensor<3x32x32xf32> {
+  // expected-error @below {{expect at least 3 operands, but got: 2}}
+  %0 = tpp.fused_brgemm [unary = relu, binary = add] 
+    (%arg0: tensor<3x32x32xf32>, %arg1: tensor<3x32x32xf32>) -> tensor<3x32x32xf32>
+  return %0: tensor<3x32x32xf32>
+}
+
+// -----
+
+func.func @fused_invalid_operands(%arg0: tensor<3x32x32xf32>, %arg1: tensor<3x32x32xf32>) -> tensor<3x32x32xf32> {
+  // expected-error @below {{invalid enum}}
+  %0 = tpp.fused_brgemm [unary = foo, binary = add] 
+    (%arg0: tensor<3x32x32xf32>, %arg1: tensor<3x32x32xf32>) -> tensor<3x32x32xf32>
+  return %0: tensor<3x32x32xf32>
+} 

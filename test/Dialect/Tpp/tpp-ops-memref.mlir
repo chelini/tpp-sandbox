@@ -106,12 +106,21 @@ func.func @test_gemm(%arg0: memref<2x2xf32>) {
   return
 }
 
-// CHECK-LABEL: fused_brgemm
-func.func @fused_brgemm(%arg0: memref<3x32x32xf32>, %arg1: memref<3x32x32xf32>, %arg2: memref<32x32xf32>,
-                        %arg3: memref<32x32xf32>) {
+// CHECK-LABEL: fused_brgemm_with_bias
+func.func @fused_brgemm_with_bias(%arg0: memref<3x32x32xf32>, %arg1: memref<3x32x32xf32>, %arg2: memref<32x32xf32>,
+                                  %bias: memref<32x32xf32>) {
   // CHECK: tpp.fused_brgemm
   tpp.fused_brgemm [unary = relu, binary = add] 
                    ins(%arg0: memref<3x32x32xf32>, %arg1: memref<3x32x32xf32>, 
-                       %arg2: memref<32x32xf32>, %arg3: memref<32x32xf32>) outs(%arg3: memref<32x32xf32>)
+                       %arg2: memref<32x32xf32>, %bias: memref<32x32xf32>) outs(%arg2: memref<32x32xf32>)
+  return
+}
+
+// CHECK-LABEL: fused_brgemm_no_bias
+func.func @fused_brgemm_no_bias(%arg0: memref<3x32x32xf32>, %arg1: memref<3x32x32xf32>, %arg2: memref<32x32xf32>) {
+  // CHECK: tpp.fused_brgemm
+  tpp.fused_brgemm [unary = relu, binary = add] 
+                   ins(%arg0: memref<3x32x32xf32>, %arg1: memref<3x32x32xf32>, 
+                       %arg2: memref<32x32xf32>) outs(%arg2: memref<32x32xf32>)
   return
 }

@@ -283,29 +283,10 @@ def Tpp_BrgemmOp : Tpp_TernaryOp<"brgemm"> {
 }
 
 //===----------------------------------------------------------------------===//
-// Quaternary Operations
-//===----------------------------------------------------------------------===//
-
-class Tpp_QuaternaryOp<string mnemonic, list<Trait> traits = []> :
-  Tpp_Op<mnemonic, !listconcat(traits, [QuaternaryOp])> {
-
-  let arguments = (ins Variadic<TppGemmLikeOperand>:$inputs,
-                       Variadic<TppGemmLikeOperand>:$outputs); 
-  let results = (outs Variadic<TppGemmLikeOperand>:$results);
-
-  let hasCustomAssemblyFormat = 1;
-  let skipDefaultBuilders = 1;
-
-  let builders = [
-    OpBuilder<(ins "ValueRange":$inputs, "Value":$output)>
-  ]; 
-}
-
-//===----------------------------------------------------------------------===//
 // FusedBrgemmOp
 //===----------------------------------------------------------------------===//
 
-def Tpp_FusedBrgemmOp : Tpp_QuaternaryOp<"fused_brgemm"> {
+def Tpp_FusedBrgemmOp : Tpp_TernaryOp<"fused_brgemm"> {
   let summary = [{
     Performs batch reduced matrix multiplication. On the result performs
     a binary operation specified by `binary_type` followed by a unary
@@ -320,27 +301,45 @@ def Tpp_FusedBrgemmOp : Tpp_QuaternaryOp<"fused_brgemm"> {
 
     ```mlir
 
+      // tensor abstraction with bias
+      %0 = tpp.fused_brgemm [unary = relu, binary = add]
+        (%arg0: tensor<3x32x32xf32>, %arg1: tensor<3x32x32xf32>
+         %arg2: tensor<32x32xf32>, %bias: tensor<32x32xf32>) -> tensor<32x32xf32>
+      
+      // tensor abstraction no bias
+      %0 = tpp.fused_brgemm [unary = relu, binary = add]
+        (%arg0: tensor<3x32x32xf32>, %arg1: tensor<3x32x32xf32>
+         %arg2: tensor<32x32xf32>) -> tensor<32x32xf32>
+
+      // memref abstraction with bias
       tpp.fused_brgemm [unary = relu, binary = add] 
                        ins(%1: memref<3x6x4xf32>, %2: memref<3x4x4xf32>, 
-                           %3: memref<4xf32>, %4: memref<6x4xf32>)
+                           %3: memref<4xf32>, %bias: memref<6x4xf32>)
+                       outs(%5: memref<6x4xf32>)
+
+      // memref abstraction no bias
+      tpp.fused_brgemm [unary = relu, binary = add]
+                       ins(%1: memref<3x6x4xf32>, %2: memref<3x4x4xf32>,
+                           %3: memref<4xf32>)
                        outs(%5: memref<6x4xf32>)
     ```
   }];
 
   let arguments = (ins Variadic<TppGemmLikeOperand>:$inputs,
-                       Variadic<TppGemmLikeOperand>:$outputs, 
+                       Optional<TppGemmLikeOperand>:$bias_input,
+                       Variadic<TppGemmLikeOperand>:$outputs,
                        Tpp_FusedUnaryOpKind:$unary_kind,
                        Tpp_FusedBinaryOpKind:$binary_kind);
-
+  
   let builders = [
-    OpBuilder<(ins "ValueRange":$inputs, "Value":$output, 
+    OpBuilder<(ins "ValueRange":$inputs, "Value":$output,
+                   "Optional<Value>":$bias_input, 
+                   "FusedUnaryOpKindAttr":$unary_type,
+                   "FusedBinaryOpKindAttr":$binary_type)>,
+    OpBuilder<(ins "ValueRange":$inputs, "Value":$output,
                    "FusedUnaryOpKindAttr":$unary_type,
                    "FusedBinaryOpKindAttr":$binary_type)>
-  ];
-  let extraClassDeclaration = [{
-    // Get the operand to be used as input to the binary operation.
-    Value getBinaryOperand() { return getInputs()[3]; };
-  }];
+  ]; 
   let hasVerifier = 1;
 }
 

@@ -31,10 +31,10 @@ func.func @vnni_brgemm_to_xsmm(%arg0 : memref<4x256x512xbf16>, %arg1 : memref<4x
 // -----
 
 func.func @brgemm_fused(%arg0: memref<3x5x4xf32>, %arg1: memref<3x4x5xf32>,
-                        %arg2: memref<5x5xf32>, %arg3: memref<5x5xf32>) {
+                        %arg2: memref<5x5xf32>, %bias: memref<5x5xf32>) {
   tpp.fused_brgemm [unary = none, binary = none] 
                   ins(%arg0: memref<3x5x4xf32>, %arg1: memref<3x4x5xf32>,
-                       %arg2: memref<5x5xf32>, %arg3: memref<5x5xf32>)
+                       %arg2: memref<5x5xf32>, %bias: memref<5x5xf32>)
                   outs(%arg2: memref<5x5xf32>)
   return
 }
@@ -50,10 +50,10 @@ func.func @brgemm_fused(%arg0: memref<3x5x4xf32>, %arg1: memref<3x4x5xf32>,
 // -----
 
 func.func @brgemm_fused(%arg0: memref<3x5x4xf32>, %arg1: memref<3x4x5xf32>,
-                        %arg2: memref<5x5xf32>, %arg3: memref<1x5xf32>) {
+                        %arg2: memref<5x5xf32>, %bias: memref<1x5xf32>) {
   tpp.fused_brgemm [unary = relu, binary = add] 
                   ins(%arg0: memref<3x5x4xf32>, %arg1: memref<3x4x5xf32>,
-                       %arg2: memref<5x5xf32>, %arg3: memref<1x5xf32>)
+                      %arg2: memref<5x5xf32>, %bias: memref<1x5xf32>)
                   outs(%arg2: memref<5x5xf32>)
   return
 }

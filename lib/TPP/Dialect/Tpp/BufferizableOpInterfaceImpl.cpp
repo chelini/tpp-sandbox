@@ -407,40 +407,21 @@ bufferizeQuaternaryOp(Operation *op, RewriterBase &rewriter,
       getBufferOrScalar(rewriter, quaternaryOp.getInputs()[2], options);
   if (failed(bufferC))
     return failure();
-  FailureOr<Value> bufferD =
-      getBufferOrScalar(rewriter, quaternaryOp.getInputs()[3], options);
-  rewriter.create<OpTy>(quaternaryOp.getLoc(),
-                        ValueRange{*bufferA, *bufferB, *bufferC, *bufferD},
-                        *bufferC, quaternaryOp.getUnaryKindAttr(),
-                        quaternaryOp.getBinaryKindAttr());
+  Optional<Value> biasInput = quaternaryOp.getBiasInput();
+  if (biasInput.has_value()) {
+    FailureOr<Value> bufferD = getBufferOrScalar(rewriter, *biasInput, options);
+    rewriter.create<OpTy>(quaternaryOp.getLoc(),
+                          ValueRange{*bufferA, *bufferB, *bufferC}, *bufferC,
+                          *bufferD, quaternaryOp.getUnaryKindAttr(),
+                          quaternaryOp.getBinaryKindAttr());
+  } else {
+    rewriter.create<OpTy>(quaternaryOp.getLoc(),
+                          ValueRange{*bufferA, *bufferB, *bufferC}, *bufferC,
+                          quaternaryOp.getUnaryKindAttr(),
+                          quaternaryOp.getBinaryKindAttr());
+  }
   replaceOpWithBufferizedValues(rewriter, op, *bufferC);
   return success();
-}
-
-// Helper function to bufferize quaternary operations. We read from all the
-// operands. If the 3 operand is zero filled we can simply write to it, similar
-// on how we do for ternary.
-static bool bufferizesToMemoryReadQuaternaryImpl(Operation *op,
-                                                 OpOperand &opOperand,
-                                                 const AnalysisState &state) {
-  return bufferizesToMemoryReadTernaryImpl(op, opOperand, state);
-}
-
-// Helper function to bufferize quaternary operations.
-// The third operand has write (and read) semantics, thus it bufferize to a
-// memory write.
-static bool bufferizesToMemoryWriteQuaternaryImpl(Operation *op,
-                                                  OpOperand &opOperand,
-                                                  const AnalysisState &state) {
-  return opOperand.getOperandNumber() == 2;
-}
-
-// Helper function to bufferize quaternary operations. The result alias
-// with the third operand, reuse the same logic as ternary.
-static AliasingOpResultList
-getAliasingOpResultsQuaternaryImpl(Operation *op, OpOperand &opOperand,
-                                   const AnalysisState &state) {
-  return getAliasingOpResultsTernaryImpl(op, opOperand, state);
 }
 
 struct GemmBufferizationInterface
@@ -497,17 +478,17 @@ struct FusedBrgemmBufferizationInterface
 
   bool bufferizesToMemoryRead(Operation *op, OpOperand &opOperand,
                               const AnalysisState &state) const {
-    return bufferizesToMemoryReadQuaternaryImpl(op, opOperand, state);
+    return bufferizesToMemoryReadTernaryImpl(op, opOperand, state);
   }
 
   bool bufferizesToMemoryWrite(Operation *op, OpOperand &opOperand,
                                const AnalysisState &state) const {
-    return bufferizesToMemoryWriteQuaternaryImpl(op, opOperand, state);
+    return bufferizesToMemoryWriteTernaryImpl(op, opOperand, state);
   }
 
   AliasingOpResultList getAliasingOpResults(Operation *op, OpOperand &opOperand,
                                             const AnalysisState &state) const {
-    return getAliasingOpResultsQuaternaryImpl(op, opOperand, state);
+    return getAliasingOpResultsTernaryImpl(op, opOperand, state);
   }
 
   LogicalResult bufferize(Operation *op, RewriterBase &rewriter,

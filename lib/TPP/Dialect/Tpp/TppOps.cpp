@@ -417,6 +417,7 @@ LogicalResult BrgemmOp::verify() { return verifyBgemmOperands(*this); }
 
 void BrgemmOp::build(OpBuilder &builder, OperationState &state,
                      ValueRange inputs, Value output) {
+  assert(inputs.size() == 3);
   tppOpBuilder(builder, state, inputs, output);
 }
 
@@ -442,11 +443,42 @@ LogicalResult FusedBrgemmOp::verify() { return verifyBgemmOperands(*this); }
 
 void FusedBrgemmOp::build(OpBuilder &builder, OperationState &state,
                           ValueRange inputs, Value output,
+                          Optional<Value> biasInput,
                           FusedUnaryOpKindAttr unaryType,
                           FusedBinaryOpKindAttr binaryType) {
-  tppOpBuilder(builder, state, inputs, output);
+  assert(inputs.size() == 3);
+
+  int numberOfInputs = inputs.size();
+  int numberOfOutputs = 0;
+  int numberOfOptionalInputs = 0;
+
+  state.addOperands(inputs);
+  if (biasInput.has_value()) {
+    numberOfOptionalInputs = 1;
+    state.addOperands(*biasInput);
+  }
+  if (auto rankedOutput =
+          output.getType().dyn_cast_or_null<RankedTensorType>()) {
+    state.addTypes(output.getType());
+  } else {
+    numberOfOutputs = 1;
+    state.addOperands(output);
+  }
+  state.attributes.set(
+      OPERAND_SEGMENT_SIZE,
+      builder.getDenseI32ArrayAttr(
+          {numberOfInputs, numberOfOptionalInputs, numberOfOutputs}));
   state.addAttribute(UNARY_KIND, unaryType);
   state.addAttribute(BINARY_KIND, binaryType);
+}
+
+void FusedBrgemmOp::build(OpBuilder &builder, OperationState &state,
+                          ValueRange inputs, Value output,
+                          FusedUnaryOpKindAttr unaryType,
+                          FusedBinaryOpKindAttr binaryType) {
+  assert(inputs.size() == 3);
+  return build(builder, state, inputs, output, std::nullopt, unaryType,
+               binaryType);
 }
 
 template <typename EnumClass>
@@ -463,6 +495,7 @@ static ParseResult parseEnum(EnumClass &value, OpAsmParser &parser) {
 }
 
 ParseResult FusedBrgemmOp::parse(OpAsmParser &parser, OperationState &result) {
+  auto loc = parser.getCurrentLocation();
   if (parser.parseLSquare() || parser.parseKeyword(UNARY) ||
       parser.parseEqual())
     return failure();
@@ -479,14 +512,33 @@ ParseResult FusedBrgemmOp::parse(OpAsmParser &parser, OperationState &result) {
   auto ctx = parser.getBuilder().getContext();
   result.addAttribute(UNARY_KIND, FusedUnaryOpKindAttr::get(ctx, unaryKind));
   result.addAttribute(BINARY_KIND, FusedBinaryOpKindAttr::get(ctx, binaryKind));
-  return parseTppOp(parser, result);
+
+  if (failed(parseTppOp(parser, result)))
+    return failure();
+  bool isMemRefOp = (result.types.size() == 0) ? true : false;
+  int outputOperands = (isMemRefOp) ? 1 : 0;
+  int inputOperands = 3;
+  int numberOfOperands = result.operands.size();
+  if (numberOfOperands < 3) {
+    return parser.emitError(loc)
+           << "expect at least 3 operands, but got: " << numberOfOperands
+           << "\n";
+  }
+  int optionalOperand = numberOfOperands - (outputOperands + inputOperands);
+  auto operandSegmentSize = parser.getBuilder().getDenseI32ArrayAttr(
+      {inputOperands, optionalOperand, outputOperands});
+  result.attributes.set(OPERAND_SEGMENT_SIZE, operandSegmentSize);
+  return success();
 }
 
 void FusedBrgemmOp::print(OpAsmPrinter &printer) {
   printer << " [" << UNARY << " = "
           << tpp::stringifyFusedUnaryOpKind(getUnaryKind()) << ", " << BINARY
           << " = " << tpp::stringifyFusedBinaryOpKind(getBinaryKind()) << "]";
-  printTppOp(printer, getInputs(), getOutputs(), getResultTypes(), *this);
+  SmallVector<Value> inputs = getInputs();
+  if (auto biasInput = getBiasInput())
+    inputs.push_back(biasInput);
+  printTppOp(printer, inputs, getOutputs(), getResultTypes(), *this);
 }
 
 void FusedBrgemmOp::getEffects(

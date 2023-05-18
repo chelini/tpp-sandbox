@@ -97,7 +97,8 @@ def CombineTppOps : Pass<"tpp-combine", "func::FuncOp"> {
   let description = [{
     Convert tpp bias + brgemm + relu op to a larger op.
   }];
-  let dependentDialects = ["func::FuncDialect", "memref::MemRefDialect"];
+  let dependentDialects = ["func::FuncDialect", "memref::MemRefDialect", 
+                           "tensor::TensorDialect"];
 }
 
 def TransformDropSchedulePass : Pass<"transform-drop-schedule", "ModuleOp"> {

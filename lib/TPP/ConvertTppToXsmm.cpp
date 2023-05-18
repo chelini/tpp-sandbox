@@ -630,6 +630,54 @@ struct ConvertTppAddOp : public OpRewritePattern<tpp::AddOp> {
   }
 };
 
+struct ConvertTppMulOp : public OpRewritePattern<tpp::MulOp> {
+  using OpRewritePattern<tpp::MulOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tpp::MulOp mulOp,
+                                PatternRewriter &rewriter) const override {
+    assert(mulOp.hasBufferSemantics() && "tpp.add expects a memref type");
+
+    auto outputMemRef = mulOp.getOutputType();
+    assert((outputMemRef.getRank() == 1 || outputMemRef.getRank() == 2) &&
+           "expect memref with rank 1 or 2");
+
+    int64_t m = (outputMemRef.getRank() == 2) ? outputMemRef.getShape()[0] : 1;
+    int64_t n = (outputMemRef.getRank() == 2) ? outputMemRef.getShape()[1]
+                                              : outputMemRef.getShape()[0];
+
+    auto lhsMemRef = mulOp.getInputs()[0].getType().cast<MemRefType>();
+    auto rhsMemRef = mulOp.getInputs()[1].getType().cast<MemRefType>();
+
+    auto ldiLhsDim = getLeadingDim(lhsMemRef);
+    if (failed(ldiLhsDim))
+      return rewriter.notifyMatchFailure(mulOp, "Cannot compute ldi on lhs");
+    int64_t ldiLhs = *ldiLhsDim;
+
+    auto ldiRhsDim = getLeadingDim(rhsMemRef);
+    if (failed(ldiRhsDim))
+      return rewriter.notifyMatchFailure(mulOp, "Cannot compute ldi on rhs");
+    int64_t ldiRhs = *ldiRhsDim;
+
+    auto ldoDim = getLeadingDim(outputMemRef);
+    if (failed(ldoDim))
+      return rewriter.notifyMatchFailure(mulOp, "Cannot compute ldo");
+    int64_t ldo = *ldoDim;
+
+    xsmm::BinaryFlags bCastOnLhs = getBinaryBCast(lhsMemRef, outputMemRef, 0);
+    xsmm::BinaryFlags bCastOnRhs = getBinaryBCast(rhsMemRef, outputMemRef, 1);
+
+    LLVM_DEBUG(llvm::dbgs() << stringifyBinaryFlags(bCastOnLhs) << "\n");
+    LLVM_DEBUG(llvm::dbgs() << stringifyBinaryFlags(bCastOnRhs) << "\n");
+
+    xsmm::BinaryFlags bCast =
+        (bCastOnLhs != xsmm::BinaryFlags::NONE) ? bCastOnLhs : bCastOnRhs;
+
+    return lowerBinaryTPPtoXSMM(mulOp, rewriter, outputMemRef.getElementType(),
+                                xsmm::BinaryKind::MUL, bCast,
+                                {m, n, ldiLhs, ldiRhs, ldo});
+  }
+};
+
 struct ConvertTppToXsmm : public ConvertTppToXsmmBase<ConvertTppToXsmm> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
@@ -642,8 +690,9 @@ struct ConvertTppToXsmm : public ConvertTppToXsmmBase<ConvertTppToXsmm> {
 
 void mlir::tpp::populateTppToXsmmPatterns(RewritePatternSet &patterns) {
   patterns.add<ConvertTppIdentityOp, ConvertTppReluOp, ConvertTppZeroOp,
-               ConvertTppAddOp, ConvertTppGemmOp, ConvertTppBrgemmOp,
-               ConvertTppFusedBrgemmOp>(patterns.getContext());
+               ConvertTppAddOp, ConvertTppMulOp, ConvertTppGemmOp,
+               ConvertTppBrgemmOp, ConvertTppFusedBrgemmOp>(
+      patterns.getContext());
 }
 
 std::unique_ptr<OperationPass<func::FuncOp>>

@@ -182,6 +182,26 @@ bool isTppAdd(linalg::GenericOp linalgOp, SmallVectorImpl<Value> *operands) {
   return isTppBinaryOp(linalgOp) && addMatcher.match(linalgOp);
 }
 
+// Return true if the linalg.generic can be mapped to a tpp.mul.
+bool isTppMul(linalg::GenericOp linalgOp, SmallVectorImpl<Value> *operands) {
+  using namespace tpp::structured_match;
+  auto mulMatcher =
+      StructuredOpMatcher::make<linalg::GenericOp>()
+          .operation(NumRegions(EqualsTo(1)))
+          .region(MatchOne(0), WithSingleOp<arith::MulFOp>(operands));
+  return isTppBinaryOp(linalgOp) && mulMatcher.match(linalgOp);
+}
+
+// Return true if the linalg.generic can be mapped to a tpp.sub.
+bool isTppSub(linalg::GenericOp linalgOp, SmallVectorImpl<Value> *operands) {
+  using namespace tpp::structured_match;
+  auto subMatcher =
+      StructuredOpMatcher::make<linalg::GenericOp>()
+          .operation(NumRegions(EqualsTo(1)))
+          .region(MatchOne(0), WithSingleOp<arith::SubFOp>(operands));
+  return isTppBinaryOp(linalgOp) && subMatcher.match(linalgOp);
+}
+
 static bool hasReluBody(Operation *op, SmallVectorImpl<Value> *captured) {
   if (!isa<linalg::GenericOp>(op))
     return false;

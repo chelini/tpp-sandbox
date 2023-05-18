@@ -283,3 +283,171 @@ func.func @linalg_fill_3d(%arg0: tensor<2x8x32xf32>) -> tensor<2x8x32xf32> {
   %0 = linalg.fill ins(%cst : f32) outs(%arg0 : tensor<2x8x32xf32>) -> tensor<2x8x32xf32>
   return %0 : tensor<2x8x32xf32>
 }
+
+// -----
+
+#map = affine_map<(d0, d1) -> (d1)>
+#map1 = affine_map<(d0, d1) -> (d0, d1)>
+
+// CHECK-LABEL: func.func @linalg_mul_with_bcast_row
+func.func @linalg_mul_with_bcast_row(%arg0: tensor<384x128xf32>, 
+                                     %arg1: tensor<128xf32>) -> tensor<384x128xf32> {
+  %0 = tensor.empty() : tensor<384x128xf32>
+  // CHECK: tpp.mul
+  %1 = linalg.generic {
+    indexing_maps = [#map1, #map, #map1], 
+    iterator_types = ["parallel", "parallel"]}
+    ins(%arg0, %arg1: tensor<384x128xf32>, tensor<128xf32>)
+    outs(%0: tensor<384x128xf32>) {
+      ^bb0(%in: f32, %in_1: f32, %out: f32):
+        %mul = arith.mulf %in, %in_1 : f32
+        linalg.yield %mul : f32
+    } -> tensor<384x128xf32>
+  return %1 : tensor<384x128xf32>
+}
+
+// -----
+
+#map = affine_map<(d0, d1) -> (d0, d1)>
+
+// CHECK-LABEL: func.func @linalg_mul
+func.func @linalg_mul(%arg0: tensor<384x128xf32>, %arg1: tensor<384x128xf32>) -> tensor<384x128xf32> {
+  %0 = tensor.empty() : tensor<384x128xf32>
+  // CHECK: tpp.mul
+  %1 = linalg.generic {
+    indexing_maps = [#map, #map, #map], 
+    iterator_types = ["parallel", "parallel"]}
+    ins(%arg0, %arg1: tensor<384x128xf32>, tensor<384x128xf32>)
+    outs(%0: tensor<384x128xf32>) {
+      ^bb0(%in: f32, %in_1: f32, %out: f32):
+        %mul = arith.mulf %in, %in_1 : f32
+        linalg.yield %mul : f32
+    } -> tensor<384x128xf32>
+  return %1 : tensor<384x128xf32>
+}
+
+// -----
+
+#map = affine_map<(d0, d1) -> (d0, 0)>
+#map1 = affine_map<(d0, d1) -> (d0, d1)>
+
+// CHECK-LABEL: func.func @linalg_mul_with_bcast_row
+func.func @linalg_mul_with_bcast_row(%arg0: tensor<384x128xf32>, 
+                                     %arg1: tensor<384x1xf32>) -> tensor<384x128xf32> {
+  %0 = tensor.empty() : tensor<384x128xf32>
+  // CHECK: tpp.mul
+  %1 = linalg.generic {
+    indexing_maps = [#map1, #map, #map1], 
+    iterator_types = ["parallel", "parallel"]}
+    ins(%arg0, %arg1: tensor<384x128xf32>, tensor<384x1xf32>)
+    outs(%0: tensor<384x128xf32>) {
+      ^bb0(%in: f32, %in_1: f32, %out: f32):
+        %mul = arith.mulf %in, %in_1 : f32
+        linalg.yield %mul : f32
+    } -> tensor<384x128xf32>
+  return %1 : tensor<384x128xf32>
+}
+
+// -----
+
+#map = affine_map<(d0, d1) -> (d1)>
+#map1 = affine_map<(d0, d1) -> (d0, d1)>
+
+// CHECK-LABEL: func.func @linalg_sub_with_bcast_row
+func.func @linalg_sub_with_bcast_row(%arg0: tensor<384x128xf32>, 
+                                     %arg1: tensor<128xf32>) -> tensor<384x128xf32> {
+  %0 = tensor.empty() : tensor<384x128xf32>
+  // CHECK: tpp.sub
+  %1 = linalg.generic {
+    indexing_maps = [#map1, #map, #map1], 
+    iterator_types = ["parallel", "parallel"]}
+    ins(%arg0, %arg1: tensor<384x128xf32>, tensor<128xf32>)
+    outs(%0: tensor<384x128xf32>) {
+      ^bb0(%in: f32, %in_1: f32, %out: f32):
+        %sub = arith.subf %in, %in_1 : f32
+        linalg.yield %sub : f32
+    } -> tensor<384x128xf32>
+  return %1 : tensor<384x128xf32>
+}
+
+// -----
+
+#map = affine_map<(d0, d1) -> (d0, d1)>
+
+// CHECK-LABEL: func.func @linalg_sub
+func.func @linalg_sub(%arg0: tensor<384x128xf32>, %arg1: tensor<384x128xf32>) -> tensor<384x128xf32> {
+  %0 = tensor.empty() : tensor<384x128xf32>
+  // CHECK: tpp.sub
+  %1 = linalg.generic {
+    indexing_maps = [#map, #map, #map], 
+    iterator_types = ["parallel", "parallel"]}
+    ins(%arg0, %arg1: tensor<384x128xf32>, tensor<384x128xf32>)
+    outs(%0: tensor<384x128xf32>) {
+      ^bb0(%in: f32, %in_1: f32, %out: f32):
+        %sub = arith.subf %in, %in_1 : f32
+        linalg.yield %sub : f32
+    } -> tensor<384x128xf32>
+  return %1 : tensor<384x128xf32>
+}
+
+// -----
+
+#map = affine_map<(d0, d1) -> (d0, 0)>
+#map1 = affine_map<(d0, d1) -> (d0, d1)>
+
+// CHECK-LABEL: func.func @linalg_sub_with_bcast_row
+func.func @linalg_sub_with_bcast_row(%arg0: tensor<384x128xf32>, 
+                                     %arg1: tensor<384x1xf32>) -> tensor<384x128xf32> {
+  %0 = tensor.empty() : tensor<384x128xf32>
+  // CHECK: tpp.sub
+  %1 = linalg.generic {
+    indexing_maps = [#map1, #map, #map1], 
+    iterator_types = ["parallel", "parallel"]}
+    ins(%arg0, %arg1: tensor<384x128xf32>, tensor<384x1xf32>)
+    outs(%0: tensor<384x128xf32>) {
+      ^bb0(%in: f32, %in_1: f32, %out: f32):
+        %sub = arith.subf %in, %in_1 : f32
+        linalg.yield %sub : f32
+    } -> tensor<384x128xf32>
+  return %1 : tensor<384x128xf32>
+}
+
+// -----
+
+#map = affine_map<(d0, d1) -> (d0, d1)>
+
+// CHECK-LABEL: func.func @linalg_sub_in_place
+func.func @linalg_sub_in_place(%arg0: tensor<384x128xf32>, 
+                               %arg1: tensor<384x128xf32>) -> tensor<384x128xf32> {
+  // CHECK: tpp.sub
+  %1 = linalg.generic {
+    indexing_maps = [#map, #map],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%arg0: tensor<384x128xf32>)
+    outs(%arg1: tensor<384x128xf32>) {
+      ^bb0(%in: f32, %out: f32):
+        %sub = arith.subf %in, %out : f32
+        linalg.yield %sub : f32
+    } -> tensor<384x128xf32>
+  return %1 : tensor<384x128xf32>
+}
+
+// -----
+
+#map = affine_map<(d0, d1) -> (d0, d1)>
+
+// CHECK-LABEL: func.func @linalg_mul_in_place
+func.func @linalg_mul_in_place(%arg0: tensor<384x128xf32>, 
+                               %arg1: tensor<384x128xf32>) -> tensor<384x128xf32> {
+  // CHECK: tpp.mul
+  %1 = linalg.generic {
+    indexing_maps = [#map, #map],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%arg0: tensor<384x128xf32>)
+    outs(%arg1: tensor<384x128xf32>) {
+      ^bb0(%in: f32, %out: f32):
+        %sub = arith.mulf %in, %out : f32
+        linalg.yield %sub : f32
+    } -> tensor<384x128xf32>
+  return %1 : tensor<384x128xf32>
+}

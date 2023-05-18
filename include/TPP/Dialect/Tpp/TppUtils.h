@@ -44,6 +44,14 @@ bool hasCopySemantics(linalg::LinalgOp linalgOp);
 bool isTppAdd(linalg::GenericOp linalgOp,
               SmallVectorImpl<Value> *capturedOperands = nullptr);
 
+// Returns true if the linalg operation can convert to a tpp.mul.
+bool isTppMul(linalg::GenericOp linalgOp,
+              SmallVectorImpl<Value> *capturedOperands = nullptr);
+
+// Returns true if the linalg operation can convert to a tpp.sub.
+bool isTppSub(linalg::GenericOp linalgOp,
+              SmallVectorImpl<Value> *capturedOperands = nullptr);
+
 // Returns true if the linalg.generic can convert to a tpp.identity.
 bool isTppIdentity(linalg::GenericOp linalgOp,
                    SmallVectorImpl<Value> *capturedOperands = nullptr);

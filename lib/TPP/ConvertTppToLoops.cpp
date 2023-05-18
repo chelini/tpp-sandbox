@@ -73,6 +73,57 @@ struct ConvertTppAddOp : public OpRewritePattern<AddOp> {
   }
 };
 
+// Convert tpp.mul to SCF loops.
+struct ConvertTppMulOp : public OpRewritePattern<MulOp> {
+  using OpRewritePattern<MulOp>::OpRewritePattern;
+
+  bool isScalarOp(MulOp mulOp) const {
+    return !mulOp.getInputs()[0].getType().isa<ShapedType>();
+  }
+
+  LogicalResult matchAndRewrite(MulOp mulOp,
+                                PatternRewriter &rewriter) const override {
+    assert(mulOp.hasBufferSemantics() && "tpp.add expects a memref type");
+
+    Location loc = mulOp.getLoc();
+    // handle scalar case.
+    if (isScalarOp(mulOp)) {
+      Value scalarAdd = rewriter.create<arith::AddFOp>(
+          loc, mulOp.getInputs()[0], mulOp.getInputs()[1]);
+      rewriter.replaceAllUsesWith(mulOp.getOutput(), scalarAdd);
+      rewriter.eraseOp(mulOp);
+      return success();
+    }
+    // handle memref case.
+    SmallVector<Value> ubs;
+    size_t rank = mulOp.getInputs()[0].getType().cast<MemRefType>().getRank();
+    for (size_t idx = 0; idx < rank; idx++) {
+      Value dim = rewriter.create<arith::ConstantIndexOp>(
+          loc,
+          mulOp.getInputs()[0].getType().cast<MemRefType>().getShape()[idx]);
+      ubs.push_back(dim);
+    }
+    Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    SmallVector<Value> lbs(rank, zero);
+    Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    SmallVector<Value> steps(rank, one);
+    (void)scf::buildLoopNest(
+        rewriter, loc, lbs, ubs, steps,
+        [&](OpBuilder &b, Location loc, ValueRange localIvs) {
+          Value scalarLhs =
+              b.create<memref::LoadOp>(loc, mulOp.getInputs()[0], localIvs);
+          Value scalarRhs =
+              b.create<memref::LoadOp>(loc, mulOp.getInputs()[1], localIvs);
+          Value addLhsAndRhs =
+              b.create<arith::MulFOp>(loc, scalarLhs, scalarRhs);
+          b.create<memref::StoreOp>(loc, addLhsAndRhs, mulOp.getOutput(),
+                                    localIvs);
+        });
+    rewriter.eraseOp(mulOp);
+    return success();
+  }
+};
+
 void buildUnaryLoop(
     PatternRewriter &rewriter, TppOp tppOp,
     function_ref<void(OpBuilder &, Location, ValueRange)> bodyBuilder) {
@@ -327,7 +378,8 @@ struct ConvertTppBrgemmOp : public OpRewritePattern<BrgemmOp> {
 
 void populateTppToLoopsPatterns(RewritePatternSet &patterns) {
   // clang-format off
-  patterns.add<ConvertTppAddOp, 
+  patterns.add<ConvertTppAddOp,
+               ConvertTppMulOp, 
                ConvertTppIdentityOp,
                ConvertTppGemmOp,
                ConvertTppBrgemmOp,

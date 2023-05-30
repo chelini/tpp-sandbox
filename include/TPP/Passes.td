@@ -412,4 +412,9 @@ def GpuToCuda : Pass<"gpu-to-cuda", "gpu::GPUModuleOp"> {
   ];
 }
 
+def ConvertToDestinationPassingStyle : Pass<"convert-to-dps", "func::FuncOp"> {
+  let summary = "Convert linalg operation to dps style.";
+  let constructor = "mlir::tpp::createConvertToDestinationPassingStylePass()";
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

@@ -16,6 +16,7 @@
 #include "mlir/Dialect/Bufferization/Transforms/Transforms.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -65,6 +66,18 @@ struct Bufferize : public BufferizeBase<Bufferize> {
   void runOnOperation() override;
 };
 
+struct ConvertToDestinationPassingStyle
+    : public ConvertToDestinationPassingStyleBase<
+          ConvertToDestinationPassingStyle> {
+  ConvertToDestinationPassingStyle() = default;
+
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<arith::ArithDialect, linalg::LinalgDialect>();
+  }
+
+  void runOnOperation() override;
+};
+
 void Bufferize::runOnOperation() {
   ModuleOp moduleOp = getOperation();
 
@@ -104,8 +117,118 @@ void Bufferize::runOnOperation() {
     return signalPassFailure();
 }
 
+// Return true if `inputOperand` can be used to store in-place `initOperand`.
+static bool canUseOperand(OpOperand *inputOperand, OpOperand *initOperand) {
+  if (auto defOp = inputOperand->get().getDefiningOp<arith::ConstantOp>())
+    return false;
+
+  if (inputOperand->getOwner() != initOperand->getOwner())
+    return false;
+
+  auto linalgOp = dyn_cast<linalg::LinalgOp>(inputOperand->getOwner());
+  if (!linalgOp)
+    return false;
+
+  if (linalgOp.getMatchingIndexingMap(inputOperand) !=
+      linalgOp.getMatchingIndexingMap(initOperand)) {
+    return false;
+  }
+
+  return inputOperand->get().getType() == initOperand->get().getType();
+}
+
+// Return the input operand that can be used to store the result if any.
+static std::optional<OpOperand *>
+getReusableInputOperands(OpOperand *initOperand, linalg::LinalgOp linalgOp) {
+  assert(linalgOp.isDpsInit(initOperand) && "Expect an init operand");
+
+  // Used in the region, cannot do in-place.
+  if (linalgOp.payloadUsesValueFromOperand(initOperand))
+    return std::nullopt;
+
+  for (OpOperand *inputOperand : linalgOp.getDpsInputOperands()) {
+    if (canUseOperand(inputOperand, initOperand))
+      return inputOperand;
+  }
+  return std::nullopt;
+}
+
+static void makeGenericOpInPlace(RewriterBase &rewriter, OpOperand *inOperand,
+                                 OpOperand *initOperand) {
+  auto genericOp = cast<linalg::GenericOp>(inOperand->getOwner());
+  assert(genericOp == initOperand->getOwner() &&
+         "expected in operand and out operand to be the same op");
+  SmallVector<Value> newInputs;
+  SmallVector<Value> newOutputs;
+  SmallVector<Type> newResultTypes;
+  SmallVector<AffineMap> maps;
+  for (OpOperand *in : genericOp.getDpsInputOperands()) {
+    if (in != inOperand) {
+      newInputs.push_back(in->get());
+      maps.push_back(genericOp.getMatchingIndexingMap(in));
+    }
+  }
+  for (OpOperand *out : genericOp.getDpsInitOperands()) {
+    maps.push_back(genericOp.getMatchingIndexingMap(out));
+    if (initOperand == out) {
+      newOutputs.push_back(inOperand->get());
+      newResultTypes.push_back(inOperand->get().getType());
+    } else {
+      newOutputs.push_back(out->get());
+      newResultTypes.push_back(out->get().getType());
+    }
+  }
+  OpBuilder::InsertionGuard g(rewriter);
+  rewriter.setInsertionPoint(genericOp);
+
+  Location loc = genericOp.getLoc();
+  SmallVector<utils::IteratorType> iterTypes(genericOp.getNumLoops(),
+                                             utils::IteratorType::parallel);
+  auto newOp = rewriter.create<linalg::GenericOp>(
+      loc, newResultTypes, newInputs, newOutputs, maps, iterTypes,
+      /*bodyBuild=*/nullptr, linalg::getPrunedAttributeList(genericOp));
+  rewriter.inlineRegionBefore(genericOp.getRegion(), newOp.getRegion(),
+                              newOp.getRegion().begin());
+
+  // Repair the payload entry block.
+  Block &payload = newOp.getRegion().front();
+  payload.getArgument(inOperand->getOperandNumber())
+      .replaceAllUsesWith(payload.getArgument(initOperand->getOperandNumber()));
+  payload.eraseArgument(inOperand->getOperandNumber());
+
+  rewriter.replaceOp(genericOp, newOp.getResults());
+}
+
+static void adaptComputeConsumerToAvoidAllocation(func::FuncOp funcOp) {
+  IRRewriter rewriter(funcOp.getContext());
+  funcOp.walk([&](linalg::LinalgOp linalgOp) {
+    if (linalgOp.getNumLoops() != linalgOp.getNumParallelLoops()) {
+      return WalkResult::skip();
+    }
+
+    for (OpOperand *initOperand : linalgOp.getDpsInitOperands()) {
+      std::optional<OpOperand *> reusableOperand =
+          getReusableInputOperands(initOperand, linalgOp);
+      if (!reusableOperand)
+        continue;
+      makeGenericOpInPlace(rewriter, *reusableOperand, initOperand);
+    }
+    return WalkResult::advance();
+  });
+}
+
+void ConvertToDestinationPassingStyle::runOnOperation() {
+  // Still TBD if this is profitable.
+  adaptComputeConsumerToAvoidAllocation(getOperation());
+}
+
 } // namespace
 
 std::unique_ptr<OperationPass<ModuleOp>> mlir::tpp::createBufferizePass() {
   return std::make_unique<Bufferize>();
+}
+
+std::unique_ptr<OperationPass<func::FuncOp>>
+mlir::tpp::createConvertToDestinationPassingStylePass() {
+  return std::make_unique<ConvertToDestinationPassingStyle>();
 }

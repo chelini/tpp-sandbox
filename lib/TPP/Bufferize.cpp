@@ -231,10 +231,12 @@ static void moveBefore(Operation *opToMove, Operation *existingOp) {
 static void moveTensorInsertSlice(func::FuncOp funcOp) {
   funcOp.walk([&](tensor::InsertSliceOp insertSliceOp) {
     SetVector<Operation *> backwardSlice;
+    BackwardSliceOptions sliceOptions;
+    sliceOptions.filter = [](Operation *op) {
+      return isa<DestinationStyleOpInterface, tensor::EmptyOp>(op);
+    };
     getBackwardSlice(
-        insertSliceOp.getSource(), &backwardSlice, [](Operation *op) {
-          return isa<DestinationStyleOpInterface, tensor::EmptyOp>(op);
-        });
+        insertSliceOp.getSource(), &backwardSlice, sliceOptions);
     if (backwardSlice.empty() || !isa<tensor::EmptyOp>(backwardSlice.front()))
       return WalkResult::skip();
 

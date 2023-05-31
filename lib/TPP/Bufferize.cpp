@@ -9,6 +9,7 @@
 #include "TPP/Passes.h"
 #include "TPP/Transforms.h"
 
+#include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -72,7 +73,8 @@ struct ConvertToDestinationPassingStyle
   ConvertToDestinationPassingStyle() = default;
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<arith::ArithDialect, linalg::LinalgDialect>();
+    registry.insert<arith::ArithDialect, linalg::LinalgDialect,
+                    tensor::TensorDialect>();
   }
 
   void runOnOperation() override;
@@ -202,9 +204,8 @@ static void makeGenericOpInPlace(RewriterBase &rewriter, OpOperand *inOperand,
 static void adaptComputeConsumerToAvoidAllocation(func::FuncOp funcOp) {
   IRRewriter rewriter(funcOp.getContext());
   funcOp.walk([&](linalg::LinalgOp linalgOp) {
-    if (linalgOp.getNumLoops() != linalgOp.getNumParallelLoops()) {
+    if (linalgOp.getNumLoops() != linalgOp.getNumParallelLoops())
       return WalkResult::skip();
-    }
 
     for (OpOperand *initOperand : linalgOp.getDpsInitOperands()) {
       std::optional<OpOperand *> reusableOperand =
@@ -217,9 +218,38 @@ static void adaptComputeConsumerToAvoidAllocation(func::FuncOp funcOp) {
   });
 }
 
+static void moveBefore(Operation *opToMove, Operation *existingOp) {
+  // Avoid breaking dominance.
+  for (Value operand : opToMove->getOperands()) {
+    Operation *defOp = operand.getDefiningOp();
+    if (!defOp || !defOp->isBeforeInBlock(existingOp))
+      return;
+  }
+  opToMove->moveBefore(existingOp);
+}
+
+static void moveTensorInsertSlice(func::FuncOp funcOp) {
+  funcOp.walk([&](tensor::InsertSliceOp insertSliceOp) {
+    SetVector<Operation *> backwardSlice;
+    getBackwardSlice(
+        insertSliceOp.getSource(), &backwardSlice, [](Operation *op) {
+          return isa<DestinationStyleOpInterface, tensor::EmptyOp>(op);
+        });
+    if (backwardSlice.empty() || !isa<tensor::EmptyOp>(backwardSlice.front()))
+      return WalkResult::skip();
+
+    Operation *destOp = insertSliceOp.getDest().getDefiningOp();
+    if (!destOp)
+      return WalkResult::skip();
+    moveBefore(destOp, backwardSlice.front());
+    return WalkResult::advance();
+  });
+}
+
 void ConvertToDestinationPassingStyle::runOnOperation() {
   // Still TBD if this is profitable.
   adaptComputeConsumerToAvoidAllocation(getOperation());
+  moveTensorInsertSlice(getOperation());
 }
 
 } // namespace

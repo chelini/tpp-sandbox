@@ -265,3 +265,29 @@ func.func @tile_and_fuse(%arg0: tensor<64x64xf32>, %arg1: tensor<64x64xf32>,
 // CHECK-SAME:{{.*}}outs(%{{.+}} : tensor<32x32xf32>)
 // CHECK: linalg.generic{{.*}}outs(%{{.+}} : tensor<32x32xf32>)
 // CHECK:   arith.maxf
+
+// -----
+
+func.func @mha_projection(%arg0: tensor<64x32x512xf32>, 
+                          %arg1: tensor<64x32x512xf32>, %arg2: tensor<64x32x512xf32>) -> tensor<64x32x8x64xf32> {
+  %cst = arith.constant 0.000000e+00 : f32
+  %cst_0 = arith.constant dense_resource<__elided__> : tensor<512x512xf32>
+  %collapsed = tensor.collapse_shape %arg2 [[0, 1], [2]] : tensor<64x32x512xf32> into tensor<2048x512xf32>
+  %0 = tensor.empty() : tensor<2048x512xf32>
+  %1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<2048x512xf32>) -> tensor<2048x512xf32>
+  %2 = linalg.matmul ins(%collapsed, %cst_0 : tensor<2048x512xf32>, tensor<512x512xf32>) outs(%1 : tensor<2048x512xf32>) -> tensor<2048x512xf32>
+  %expanded = tensor.expand_shape %2 [[0, 1], [2, 3]] : tensor<2048x512xf32> into tensor<64x32x8x64xf32>
+  return %expanded : tensor<64x32x8x64xf32>
+}
+
+// CHECK-LABEL: mha_projection
+// CHECK: %{{.+}} = scf.forall (%[[ARG3:.+]], %[[ARG4:.+]]) in (64, 16) shared_outs(%[[ARG5:.+]] = %{{.+}})
+// CHECK: %[[SLICE:.+]] = tensor.extract_slice %[[ARG5]][%[[ARG3]], %[[ARG4]], 0, 0] [1, 1, 32, 32] [1, 1, 1, 1] 
+// CHECK-SAME:  : tensor<64x16x32x32xf32> to tensor<32x32xf32>
+// CHECK: %[[FILL:.+]] = linalg.fill ins(%{{.+}} : f32) outs(%[[SLICE]] : tensor<32x32xf32>) -> tensor<32x32xf32>
+// CHECK: %[[SLICE1:.+]] = tensor.extract_slice %{{.+}}[%[[ARG3]], 0, 0, 0] [1, 16, 32, 32] [1, 1, 1, 1] 
+// CHECK-SAME:  : tensor<64x16x32x32xf32> to tensor<16x32x32xf32>
+// CHECK: %[[SLICE2:.+]] = tensor.extract_slice %{{.+}}[%[[ARG4]], 0, 0, 0] [1, 16, 32, 32] [1, 1, 1, 1] 
+// CHECK-SAME:  : tensor<16x16x32x32xf32> to tensor<16x32x32xf32>
+// CHECK: %{{.+}} = linalg.batch_reduce_matmul ins(%[[SLICE1]], %[[SLICE2]] : tensor<16x32x32xf32>, tensor<16x32x32xf32>) 
+// CHECK-sAME:  outs(%[[FILL]] : tensor<32x32xf32>) -> tensor<32x32xf32>

@@ -67,3 +67,10 @@ func.func @fused_brgemm_with_1d_bias(%arg0: tensor<3x32x32xf32>, %arg1: tensor<3
                          %arg2: tensor<32x32xf32>, %bias: tensor<32xf32>) -> tensor<32x32xf32>
   return %0: tensor<32x32xf32>
 }
+
+// CHECK-LABEL: func.func @transpose
+func.func @transpose(%arg0: tensor<4x3xf32>, %arg1: tensor<3x4xf32>) -> tensor<3x4xf32> {
+  // CHECK: tpp.transpose
+  %0 = tpp.transpose(%arg0: tensor<4x3xf32>, %arg1: tensor<3x4xf32>) -> tensor<3x4xf32>
+  return %0 : tensor<3x4xf32>
+}

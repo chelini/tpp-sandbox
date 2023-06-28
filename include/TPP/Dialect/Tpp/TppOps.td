@@ -152,8 +152,7 @@ def Tpp_ZeroOp : Tpp_UnaryOp<"zero"> {
 //===----------------------------------------------------------------------===//
 
 class Tpp_BinaryOp<string mnemonic, list<Trait> traits = []> :
-  Tpp_Op<mnemonic, !listconcat(traits, [BinaryOp,
-                                        BroadcastableShape])> {
+  Tpp_Op<mnemonic, !listconcat(traits, [BinaryOp])> {
 
   let arguments = (ins Variadic<TppInputOperand>:$inputs, 
                        Variadic<TppOutputOperand>:$outputs);
@@ -172,7 +171,7 @@ class Tpp_BinaryOp<string mnemonic, list<Trait> traits = []> :
 // AddOp
 //===----------------------------------------------------------------------===//
 
-def Tpp_AddOp : Tpp_BinaryOp<"add"> {
+def Tpp_AddOp : Tpp_BinaryOp<"add", [BroadcastableShape]> {
   let summary = "Element-wise addition.";
   let description = [{
     The `tpp.add` operation performs element-wise addition on two-dimensional
@@ -208,6 +207,16 @@ def Tpp_AddOp : Tpp_BinaryOp<"add"> {
     ```
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// TransposeOp
+//===----------------------------------------------------------------------===//
+
+def Tpp_TransposeOp : Tpp_BinaryOp<"transpose"> {
+  let summary = "Out of place 2d transpose operation."; 
+  let hasVerifier = 1;
+}
+
 
 //===----------------------------------------------------------------------===//
 // Ternary Operations

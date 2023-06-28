@@ -430,6 +430,56 @@ struct AddBufferizationInterface
   }
 };
 
+struct TransposeBufferizationInterface
+    : public BufferizableOpInterface::ExternalModel<
+          TransposeBufferizationInterface, tpp::TransposeOp> {
+
+  bool bufferizesToMemoryRead(Operation *op, OpOperand &opOperand,
+                              const AnalysisState &state) const {
+    // Only the first operand has read semantics.
+    return opOperand.getOperandNumber() == 0;
+  }
+
+  bool bufferizesToMemoryWrite(Operation *op, OpOperand &opOperand,
+                               const AnalysisState &state) const {
+    // Only the second operand has write semantics.
+    return opOperand.getOperandNumber() == 1;
+  }
+
+  AliasingOpResultList getAliasingOpResults(Operation *op, OpOperand &opOperand,
+                                            const AnalysisState &state) const {
+    // The second operand alias with the result.
+    if (opOperand.getOperandNumber() == 1) {
+      return {{op->getOpResult(0), BufferRelation::Equivalent,
+               /*isDefinite=*/true}};
+    }
+    return {};
+  }
+
+  LogicalResult bufferize(Operation *op, RewriterBase &rewriter,
+                          const BufferizationOptions &options) const {
+    auto binaryOp = cast<tpp::TransposeOp>(op);
+    auto loc = binaryOp.getLoc();
+    FailureOr<Value> lhsBuffer =
+        getBufferOrScalar(rewriter, binaryOp.getInputs()[0], options);
+    if (failed(lhsBuffer))
+      return failure();
+    FailureOr<Value> rhsBuffer =
+        getBufferOrScalar(rewriter, binaryOp.getInputs()[1], options);
+    if (failed(rhsBuffer))
+      return failure();
+    rewriter.create<tpp::TransposeOp>(loc, ValueRange{*lhsBuffer, *rhsBuffer},
+                                      *rhsBuffer);
+    replaceOpWithBufferizedValues(rewriter, op, *rhsBuffer);
+    return success();
+  }
+
+  bool bufferizesToAllocation(Operation *op, OpResult opResult) const {
+    // No allocation required.
+    return false;
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // Ternary
 //===----------------------------------------------------------------------===//
@@ -632,6 +682,7 @@ void registerBufferizableOpInterfaceExternalModels(DialectRegistry &registry) {
     BrgemmOp::attachInterface<tpp::BrgemmBufferizationInterface>(*ctx);
     FusedBrgemmOp::attachInterface<tpp::FusedBrgemmBufferizationInterface>(
         *ctx);
+    TransposeOp::attachInterface<tpp::TransposeBufferizationInterface>(*ctx);
   });
 }
 } // namespace tpp

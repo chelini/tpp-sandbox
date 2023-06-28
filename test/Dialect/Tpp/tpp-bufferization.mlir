@@ -994,3 +994,14 @@ func.func @not_same_repetitive_region_both(%arg0: tensor<10x10xf32>) -> tensor<1
   }
   return %2 : tensor<10x10xf32>
 }
+
+// -----
+
+// CHECK-LABEL: transpose
+// CHECK-SAME: %[[ARG0:.+]]: memref<3x2xf32>, %[[ARG1:.+]]: memref<2x3xf32>
+func.func @transpose(%arg0: tensor<3x2xf32>, %arg1: tensor<2x3xf32>) -> tensor<2x3xf32> {
+  // CHECK: tpp.transpose ins(%[[ARG0]] : memref<3x2xf32>, %[[ARG1]] : memref<2x3xf32>)
+  // CHECK-SAME:  outs(%[[ARG1]] : memref<2x3xf32>)
+  %0 = tpp.transpose (%arg0: tensor<3x2xf32>, %arg1: tensor<2x3xf32>) -> tensor<2x3xf32>
+  return %0 : tensor<2x3xf32>
+}

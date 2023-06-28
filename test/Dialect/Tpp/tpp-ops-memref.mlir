@@ -115,3 +115,10 @@ func.func @fused_brgemm(%arg0: memref<3x32x32xf32>, %arg1: memref<3x32x32xf32>, 
                        %arg2: memref<32x32xf32>, %arg3: memref<32x32xf32>) outs(%arg3: memref<32x32xf32>)
   return
 }
+
+// CHECK-LABEL: transpose
+func.func @transpose(%arg0: memref<2x3xf32>, %arg1: memref<3x2xf32>) {
+  // CHECK: tpp.transpose
+  tpp.transpose ins(%arg0: memref<2x3xf32>, %arg1: memref<3x2xf32>) outs(%arg1: memref<3x2xf32>)
+  return
+}

@@ -303,6 +303,62 @@ void AddOp::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// TransposeOp
+//===----------------------------------------------------------------------===//
+
+void TransposeOp::build(OpBuilder &builder, OperationState &state,
+                        ValueRange inputs, Value output) {
+  tppOpBuilderMemRef(builder, state, inputs, output);
+}
+
+// Builder for tensor abstraction.
+void TransposeOp::build(OpBuilder &builder, OperationState &state,
+                        ValueRange inputs, Type outputType) {
+  tppOpBuilderTensor(builder, state, inputs, outputType);
+}
+
+void TransposeOp::print(OpAsmPrinter &printer) {
+  printTppOp(printer, getInputs(), getOutputs(), getResultTypes(), *this);
+}
+
+ParseResult TransposeOp::parse(OpAsmParser &parser, OperationState &result) {
+  return parseTppOp(parser, result);
+}
+
+void TransposeOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  getEffectsImpl(*this, effects);
+}
+
+static bool verifyTransposeOperands(Type lhs, Type rhs) {
+  if (!lhs.isa<ShapedType>() || !rhs.isa<ShapedType>())
+    return false;
+  ArrayRef<int64_t> lhsShape = lhs.cast<ShapedType>().getShape();
+  ArrayRef<int64_t> rhsShape = rhs.cast<ShapedType>().getShape();
+  if (lhsShape.size() != 2 || rhsShape.size() != 2)
+    return false;
+  return (lhsShape[0] == rhsShape[1] && lhsShape[1] == rhsShape[0]);
+}
+
+LogicalResult TransposeOp::verify() {
+  if (!verifyTransposeOperands(getInputs()[0].getType(),
+                               getInputs()[1].getType())) {
+    return emitOpError("expect rhs to be a 2d transpose of lhs");
+  }
+  if (hasTensorSemantics()) {
+    auto resultType = getResultType();
+    if (resultType != getInputs()[1].getType())
+      return emitOpError("rhs must have the same type as result");
+    return success();
+  }
+  auto outputType = getOutput().getType();
+  if (outputType != getInputs()[1].getType())
+    return emitOpError("rhs must have the same type as output");
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // GemmOp
 //===----------------------------------------------------------------------===//
 

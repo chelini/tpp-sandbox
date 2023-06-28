@@ -401,3 +401,51 @@ func.func @fused_brgemm_scalar_bias(%arg0: tensor<3x32x32xf32>, %arg1: tensor<3x
                          %arg2: tensor<32x32xf32>, %bias: f32) -> tensor<32x32xf32>
   return %0: tensor<32x32xf32>
 }
+
+// -----
+
+func.func @invalid_transpose_at_tensor(%arg0: tensor<2x3xf32>, %arg1: tensor<3x2xf32>) -> tensor<3x3xf32> {
+  // expected-error @below {{rhs must have the same type as result}}
+  %0 = tpp.transpose (%arg0: tensor<2x3xf32>, %arg1: tensor<3x2xf32>) -> tensor<3x3xf32>
+  return %0 : tensor<3x3xf32>
+}
+
+// -----
+
+func.func @invalid_transpose_at_tensor(%arg0: memref<2x3xf32>, %arg1: memref<3x2xf32>, %arg2: memref<3x3xf32>) {
+  // expected-error @below {{rhs must have the same type as output}}
+  tpp.transpose ins(%arg0: memref<2x3xf32>, %arg1: memref<3x2xf32>) outs(%arg2: memref<3x3xf32>)
+  return
+}
+
+// -----
+
+func.func @invalid_transpose_at_tensor(%arg0: tensor<2x3xf32>, %arg1: tensor<3x3xf32>) -> tensor<3x3xf32> {
+  // expected-error @below {{expect rhs to be a 2d transpose of lhs}}
+  %0 = tpp.transpose (%arg0: tensor<2x3xf32>, %arg1: tensor<3x3xf32>) -> tensor<3x3xf32>
+  return %0 : tensor<3x3xf32>
+}
+
+// -----
+
+func.func @invalid_transpose_at_tensor(%arg0: memref<2x3xf32>, %arg1: memref<3x3xf32>) {
+  // expected-error @below {{expect rhs to be a 2d transpose of lhs}}
+  tpp.transpose ins(%arg0: memref<2x3xf32>, %arg1: memref<3x3xf32>) outs(%arg1: memref<3x3xf32>)
+  return
+}
+
+// -----
+
+func.func @invalid_transpose_at_tensor(%arg0: f32, %arg1: tensor<3x3xf32>) -> tensor<3x3xf32> {
+  // expected-error @below {{expect rhs to be a 2d transpose of lhs}}
+  %0 = tpp.transpose (%arg0: f32, %arg1: tensor<3x3xf32>) -> tensor<3x3xf32>
+  return %0 : tensor<3x3xf32>
+}
+
+// -----
+
+func.func @invalid_transpose_at_tensor(%arg0: f32, %arg1: memref<3x3xf32>) {
+  // expected-error @below {{expect rhs to be a 2d transpose of lhs}}
+  tpp.transpose ins(%arg0: f32, %arg1: memref<3x3xf32>) outs(%arg1: memref<3x3xf32>)
+  return
+}

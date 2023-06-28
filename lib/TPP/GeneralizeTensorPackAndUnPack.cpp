@@ -210,7 +210,7 @@ struct GeneralizeTensorPackAndUnPack
     {
       RewritePatternSet patterns(ctx);
       linalg::populateLinalgTilingCanonicalizationPatterns(patterns);
-      memref::populateResolveRankedShapeTypeResultDimsPatterns(patterns);
+      memref::populateResolveRankedShapedTypeResultDimsPatterns(patterns);
       ctx->getOrLoadDialect<tensor::TensorDialect>()
           ->getCanonicalizationPatterns(patterns);
       if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {

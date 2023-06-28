@@ -77,7 +77,7 @@ LogicalResult lowerUnPack(RewriterBase &rewriter, tensor::UnPackOp unPackOp) {
     // The inner dimensions stay the same as the destination tensor, but the
     // outer ones are additional 1s.
     SmallVector<OpFoldResult> sizes(packedRank - destShape.size(), one);
-    sizes.append(linalg::getMixedDimensions(rewriter, loc, unPackOp.getDest()));
+    sizes.append(tensor::getMixedSizes(rewriter, loc, unPackOp.getDest()));
 
     auto extractSliceOp = rewriter.create<tensor::ExtractSliceOp>(
         loc, destTensorType, unPackOp.getSource(),
@@ -210,7 +210,7 @@ struct GeneralizeTensorPackAndUnPack
     {
       RewritePatternSet patterns(ctx);
       linalg::populateLinalgTilingCanonicalizationPatterns(patterns);
-      memref::populateResolveRankedShapeTypeResultDimsPatterns(patterns);
+      memref::populateResolveRankedShapedTypeResultDimsPatterns(patterns);
       ctx->getOrLoadDialect<tensor::TensorDialect>()
           ->getCanonicalizationPatterns(patterns);
       if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {

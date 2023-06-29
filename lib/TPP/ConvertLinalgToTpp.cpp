@@ -83,12 +83,14 @@ struct ConvertGenericOpToTpp : public OpRewritePattern<linalg::GenericOp> {
 
   LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
                                 PatternRewriter &rewriter) const override {
-    if (!linalgOp.hasTensorSemantics())
+    if (!linalgOp.hasTensorSemantics()) {
       return rewriter.notifyMatchFailure(
           linalgOp, "Expect tensor type when mapping to tpp");
-    if (linalgOp.hasDynamicShape())
+    }
+    if (linalgOp.hasDynamicShape()) {
       return rewriter.notifyMatchFailure(
           linalgOp, "Expect static shape when mapping to tpp");
+    }
     return rewriteToTppOp(linalgOp, rewriter);
   }
 };
@@ -100,12 +102,14 @@ struct ConvertBrgemmToTpp
 
   LogicalResult matchAndRewrite(linalg::BatchReduceMatmulOp brMatmulOp,
                                 PatternRewriter &rewriter) const override {
-    if (!brMatmulOp.hasTensorSemantics())
+    if (!brMatmulOp.hasTensorSemantics()) {
       return rewriter.notifyMatchFailure(
           brMatmulOp, "Expect tensor type when mapping to tpp");
-    if (brMatmulOp.hasDynamicShape())
+    }
+    if (brMatmulOp.hasDynamicShape()) {
       return rewriter.notifyMatchFailure(
           brMatmulOp, "Expect static shape when mapping to tpp");
+    }
     SmallVector<Value> inputs = brMatmulOp.getDpsInputOperands();
     inputs.push_back(brMatmulOp.getDpsInitOperands()[0]->get());
     SmallVector<Value> outputs = brMatmulOp.getDpsInitOperands();
@@ -121,12 +125,14 @@ struct ConvertMatmulToTpp : public OpRewritePattern<linalg::MatmulOp> {
 
   LogicalResult matchAndRewrite(linalg::MatmulOp matmulOp,
                                 PatternRewriter &rewriter) const override {
-    if (!matmulOp.hasTensorSemantics())
+    if (!matmulOp.hasTensorSemantics()) {
       return rewriter.notifyMatchFailure(
           matmulOp, "Expect tensor type when mapping to tpp");
-    if (matmulOp.hasDynamicShape())
+    }
+    if (matmulOp.hasDynamicShape()) {
       return rewriter.notifyMatchFailure(
           matmulOp, "Expect static shape when mapping to tpp");
+    }
     SmallVector<Value> inputs = matmulOp.getDpsInputOperands();
     inputs.push_back(matmulOp.getDpsInitOperands()[0]->get());
     SmallVector<Value> outputs = matmulOp.getDpsInitOperands();
@@ -142,12 +148,14 @@ struct ConvertFillToTpp : public OpRewritePattern<linalg::FillOp> {
 
   LogicalResult matchAndRewrite(linalg::FillOp fillOp,
                                 PatternRewriter &rewriter) const override {
-    if (!fillOp.hasTensorSemantics())
+    if (!fillOp.hasTensorSemantics()) {
       return rewriter.notifyMatchFailure(
           fillOp, "Expect tensor type when mapping to tpp");
-    if (fillOp.hasDynamicShape())
+    }
+    if (fillOp.hasDynamicShape()) {
       return rewriter.notifyMatchFailure(
           fillOp, "Expect static shape when mapping to tpp");
+    }
 
     auto inputs = fillOp.getInputs();
     if (!tpp::utils::isZeroTensor(inputs[0]))
@@ -159,6 +167,43 @@ struct ConvertFillToTpp : public OpRewritePattern<linalg::FillOp> {
       return rewriter.notifyMatchFailure(fillOp, "Expect output rank 2");
 
     rewriter.replaceOpWithNewOp<tpp::ZeroOp>(fillOp, output, output.getType());
+    return success();
+  }
+};
+
+// Convert a linalg.tranpose to a tpp.transpose.
+struct ConvertTransposeToTpp : public OpRewritePattern<linalg::TransposeOp> {
+  using OpRewritePattern<linalg::TransposeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::TransposeOp transposeOp,
+                                PatternRewriter &rewriter) const override {
+    if (!transposeOp.hasTensorSemantics()) {
+      return rewriter.notifyMatchFailure(
+          transposeOp, "Expect tensor type when mapping to tpp");
+    }
+    if (transposeOp.hasDynamicShape()) {
+      return rewriter.notifyMatchFailure(
+          transposeOp, "Expect static shape when mapping to tpp");
+    }
+
+    auto input = transposeOp.getInput();
+    auto output = transposeOp.getInit();
+    int64_t rank = output.getType().cast<ShapedType>().getRank();
+    if (rank != 2)
+      return rewriter.notifyMatchFailure(transposeOp, "Expect output rank 2");
+
+    SmallVector<int64_t> permutation =
+        llvm::to_vector(transposeOp.getPermutation());
+    SmallVector<int64_t> sequence =
+        llvm::to_vector(llvm::seq<int64_t>(0, rank));
+    if (permutation == sequence) {
+      return rewriter.notifyMatchFailure(
+          transposeOp,
+          "Cannot lower linalg.transpose to tpp.transpose with copy semantics");
+    }
+
+    rewriter.replaceOpWithNewOp<tpp::TransposeOp>(
+        transposeOp, ValueRange{input, output}, output.getType());
     return success();
   }
 };
@@ -183,7 +228,8 @@ void mlir::tpp::populateConvertLinalgToTppPatterns(
   patterns.add<ConvertGenericOpToTpp,
                ConvertBrgemmToTpp,
                ConvertMatmulToTpp,
-               ConvertFillToTpp>(patterns.getContext());
+               ConvertFillToTpp,
+               ConvertTransposeToTpp>(patterns.getContext());
   // clang-format on
 }
 

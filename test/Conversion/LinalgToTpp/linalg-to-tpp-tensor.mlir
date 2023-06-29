@@ -863,3 +863,30 @@ func.func @linalg_zero_gemm_fused_bias_relu_no_chain(%arg0: tensor<128x256xf32>,
   return %1 : tensor<128x512xf32>
 }
 
+// -----
+
+// CHECK-LABEL: transpose
+// CHECK-SAME: %[[ARG0:.+]]: tensor<3x2xf32>, %[[ARG1:.+]]: tensor<2x3xf32>
+func.func @transpose(%arg0: tensor<3x2xf32>, %arg1: tensor<2x3xf32>) -> tensor<2x3xf32> {
+  // CHECK: %{{.+}} = tpp.transpose (%[[ARG0]] : tensor<3x2xf32>, %[[ARG1]] : tensor<2x3xf32>) -> (tensor<2x3xf32>)
+  %0 = linalg.transpose ins(%arg0: tensor<3x2xf32>) outs(%arg1: tensor<2x3xf32>) permutation = [1, 0]
+  return %0 : tensor<2x3xf32>
+}
+
+// -----
+
+// CHECK-LABEL: transpose_no_match
+func.func @transpose_no_match(%arg0: tensor<1x3x2xf32>, %arg1: tensor<1x2x3xf32>) -> tensor<1x2x3xf32> {
+  // CHECK-NOT: tpp.transpose
+  %0 = linalg.transpose ins(%arg0: tensor<1x3x2xf32>) outs(%arg1: tensor<1x2x3xf32>) permutation = [0, 2, 1]
+  return %0 : tensor<1x2x3xf32>
+}
+
+// -----
+
+// CHECK-LABEL: copy_transpose
+func.func @copy_transpose(%arg0: tensor<3x2xf32>, %arg1: tensor<3x2xf32>) -> tensor<3x2xf32> {
+  // CHECK-NOT: tpp.transpose
+  %0 = linalg.transpose ins(%arg0: tensor<3x2xf32>) outs(%arg1: tensor<3x2xf32>) permutation = [0, 1]
+  return %0 : tensor<3x2xf32>
+}

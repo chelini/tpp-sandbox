@@ -373,15 +373,25 @@ static LogicalResult lowerTPPtoXSMM(tpp::TppOp op, PatternRewriter &rewriter,
   SmallVector<Value> invokeOperands;
   invokeOperands.push_back(dispatched);
   invokeOperands.append(op.getInputs().begin(), op.getInputs().end());
+  // XXX: terrible workaround. We model transpose as binary
+  // but LIBXSMM requires a unary op.
+  if (isa<tpp::TransposeOp>(op))
+    invokeOperands.pop_back();
   invokeOperands.push_back(op.getOutput());
 
   rewriter.replaceOpWithNewOp<Op>(op, dtype, kindAttr, invokeOperands);
   return success();
 }
 
-static xsmm::UnaryFlags getUnaryFlags(tpp::TppOp tppOp) {
-  Type inputType = tppOp.getInputs()[0].getType();
+// Return the unary bcast flags for `tppOp`.
+static xsmm::UnaryFlags getUnaryBCast(tpp::TppOp tppOp) {
+  // Happy path, the op does not have broadcast semantics.
+  if (!tppOp->hasTrait<OpTrait::tpp::BroadcastableShape>())
+    return xsmm::UnaryFlags::NONE;
+  assert(tppOp->hasTrait<OpTrait::tpp::BroadcastableShape>() &&
+         "op must have broadcast semantics");
 
+  Type inputType = tppOp.getInputs()[0].getType();
   // There are multiple ways to define a scalar.  f32, memref<1x1xf32> or
   // memref<f32>. Handle f32, and memref<1x1xf32>. memref<f32> is not allowed
   // in tpp at the moment.
@@ -428,7 +438,7 @@ static LogicalResult lowerUnaryTPPtoXSMM(PatternRewriter &rewriter,
   auto ldi = getLeadingDim(tppOp.getInputs()[0].getType());
   if (failed(ldi))
     return rewriter.notifyMatchFailure(tppOp, "cannot compute ldi");
-  xsmm::UnaryFlags flags = getUnaryFlags(tppOp);
+  xsmm::UnaryFlags flags = getUnaryBCast(tppOp);
   return lowerTPPtoXSMM<xsmm::UnaryKind, xsmm::UnaryFlags, xsmm::UnaryKindAttr,
                         xsmm::UnaryFlagsAttr, xsmm::UnaryDispatchOp,
                         xsmm::UnaryOp>(tppOp, rewriter,
@@ -475,6 +485,16 @@ struct ConvertTppZeroOp : public OpRewritePattern<tpp::ZeroOp> {
   LogicalResult matchAndRewrite(tpp::ZeroOp zeroOp,
                                 PatternRewriter &rewriter) const override {
     return lowerUnaryTPPtoXSMM(rewriter, zeroOp, xsmm::UnaryKind::ZERO);
+  }
+};
+
+struct ConvertTppTransposeOp : public OpRewritePattern<tpp::TransposeOp> {
+  using OpRewritePattern<tpp::TransposeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tpp::TransposeOp transposeOp,
+                                PatternRewriter &rewriter) const override {
+    return lowerUnaryTPPtoXSMM(rewriter, transposeOp,
+                               xsmm::UnaryKind::TRANSPOSE);
   }
 };
 
@@ -601,7 +621,8 @@ struct ConvertTppToXsmm : public ConvertTppToXsmmBase<ConvertTppToXsmm> {
 void mlir::tpp::populateTppToXsmmPatterns(RewritePatternSet &patterns) {
   patterns.add<ConvertTppIdentityOp, ConvertTppReluOp, ConvertTppZeroOp,
                ConvertTppAddOp, ConvertTppGemmOp, ConvertTppBrgemmOp,
-               ConvertTppFusedBrgemmOp>(patterns.getContext());
+               ConvertTppFusedBrgemmOp, ConvertTppTransposeOp>(
+      patterns.getContext());
 }
 
 std::unique_ptr<OperationPass<func::FuncOp>>

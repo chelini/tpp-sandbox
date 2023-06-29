@@ -162,9 +162,14 @@ xsmm_unary_dispatch(const libxsmm_meltw_unary_type op_type,
   // std::cout << "bcast_type: " << bcast_type << "\n";
 
   libxsmm_meltw_unary_shape unary_shape;
-  // Row major to col major swap m with n.
-  unary_shape.m = static_cast<libxsmm_blasint>(n);
-  unary_shape.n = static_cast<libxsmm_blasint>(m);
+  if (op_type == LIBXSMM_MELTW_TYPE_UNARY_TRANSFORM_NORM_TO_NORMT) {
+    unary_shape.n = static_cast<libxsmm_blasint>(n);
+    unary_shape.m = static_cast<libxsmm_blasint>(m);
+  } else {
+    // Row major to col major swap m with n.
+    unary_shape.m = static_cast<libxsmm_blasint>(n);
+    unary_shape.n = static_cast<libxsmm_blasint>(m);
+  }
   unary_shape.in0_type = dtype;
   // Retarget computation type from bf16 to f32 due to missing hardware support.
   // Copy and Zero should remain in BF16 to avoid useless up/down casts

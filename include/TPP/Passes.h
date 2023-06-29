@@ -151,6 +151,7 @@ void registerTestForToForAllRewrite();
 } // namespace tpp
 namespace linalg {
 std::unique_ptr<OperationPass<func::FuncOp>> createLinalgDeGeneralizationPass();
+std::unique_ptr<OperationPass<func::FuncOp>> createLinalgMake2DPass();
 } // namespace linalg
 } // namespace mlir
 

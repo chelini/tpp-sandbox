@@ -90,7 +90,6 @@ func.func @generalize_pack_unpack(%arg0: tensor<12x2x56x56x32xf32>, %arg1: tenso
 // CHECK: scf.for
 // CHECK:   scf.for
 // CHECK:     tensor.extract_slice{{[^:]+}}: tensor<12x2x56x56x32xf32> to tensor<32xf32>
-// CHECK:     linalg.transpose
 // CHECK:     tensor.insert_slice{{[^:]+}}: tensor<1x1x1x1xf32> into tensor<12x56x56x64xf32>
 
 // -----

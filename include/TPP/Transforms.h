@@ -88,6 +88,7 @@ void populateSinkPackPatterns(RewritePatternSet &patterns);
 } // namespace tpp
 namespace linalg {
 void populateLinalgDeGeneralizationPatterns(RewritePatternSet &patterns);
+void populateLinalg2DPatterns(RewritePatternSet &patterns);
 } // namespace linalg
 } // namespace mlir
 

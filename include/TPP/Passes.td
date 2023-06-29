@@ -433,4 +433,17 @@ def LinalgDeGeneralize : Pass<"linalg-degeneralize-generic-ops", "func::FuncOp">
   let dependentDialects = ["linalg::LinalgDialect"];
 }
 
+def LinalgMake2D : Pass<"linalg-make-ops-2d", "func::FuncOp"> {
+  let summary = "Convert linalg op to 2d ops";
+  let description = [{
+    Rewrite linalg operations to make it possible to map them to the tpp
+    dialect. This pass must be one of the last step in the pipeline as it
+    materializes loops.
+  }];
+  let constructor = "mlir::linalg::createLinalgMake2DPass()";
+  let dependentDialects = ["scf::SCFDialect", 
+                           "linalg::LinalgDialect",
+                           "tensor::TensorDialect"];
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

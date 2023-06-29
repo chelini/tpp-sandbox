@@ -152,12 +152,73 @@ struct FillOpDeGeneralizationPattern
   }
 };
 
+// From linalg.generic to linalg.transpose.
+struct TransposeOpDeGeneralizationPattern
+    : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  // Get the position of dim exprs in the codomain.
+  static SmallVector<int64_t> getDimsPos(AffineMap map) {
+    assert(map.isProjectedPermutation());
+    SmallVector<int64_t> dims;
+    for (auto expr : map.getResults())
+      dims.push_back(expr.cast<AffineDimExpr>().getPosition());
+    return dims;
+  }
+
+  bool isTransposeOp(linalg::LinalgOp linalgOp) const {
+    using namespace tpp::structured_match;
+    // Callable object to check if `map` is a permutation of
+    // `toCompareWith`. `toCompareWith` is an identity here.
+    struct isPermutationOfIdentity {
+      isPermutationOfIdentity() = default;
+      bool operator()(AffineMap map) const {
+        assert(map && "must be valid");
+        if (!map.isProjectedPermutation())
+          return false;
+        SmallVector<int64_t> permutation = getDimsPos(map);
+        auto sequence =
+            llvm::to_vector(llvm::seq<int64_t>(0, permutation.size()));
+        return std::is_permutation(sequence.begin(), sequence.end(),
+                                   permutation.begin(), permutation.end());
+      }
+    };
+
+    auto isTransposeMatcher =
+        StructuredOpMatcher::make<linalg::GenericOp>()
+            .operation(NumDpsInits(EqualsTo(1)))
+            .operation(NumDpsInputs(EqualsTo(1)))
+            .operation(NumRegions(EqualsTo(1)))
+            .dim(MatchAll(), mlir::utils::IteratorType::parallel)
+            .output(MatchAll(), HasMap(isPermutationOfIdentity(), &outputMap))
+            .input(MatchAll(), HasMap(Identity()))
+            .region(MatchOne(0),
+                    WithSingleOp<linalg::YieldOp>(/*captures=*/nullptr));
+    return isTransposeMatcher.match(linalgOp);
+  }
+
+  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    if (!isTransposeOp(linalgOp))
+      return failure();
+    assert(outputMap && "expect output map to be valid");
+    SmallVector<Value> inputOperands = linalgOp.getDpsInputOperands();
+    SmallVector<Value> outputOperands = linalgOp.getDpsInitOperands();
+    rewriter.replaceOpWithNewOp<linalg::TransposeOp>(
+        linalgOp, inputOperands[0], outputOperands[0], getDimsPos(outputMap));
+    return failure();
+  }
+
+  mutable AffineMap outputMap;
+};
+
 } // namespace
 
 void mlir::linalg::populateLinalgDeGeneralizationPatterns(
     RewritePatternSet &patterns) {
   patterns.add<FillOpDeGeneralizationPattern, MatmulOpDeGeneralizationPattern,
-               BatchReduceOpDeGeneralizationPattern>(patterns.getContext());
+               BatchReduceOpDeGeneralizationPattern,
+               TransposeOpDeGeneralizationPattern>(patterns.getContext());
 }
 
 std::unique_ptr<OperationPass<func::FuncOp>>

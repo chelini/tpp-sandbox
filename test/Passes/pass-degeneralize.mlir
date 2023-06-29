@@ -81,3 +81,29 @@ func.func @degeneralize(%arg0: tensor<3x3x3xf32>, %arg1: tensor<3x3x3xf32>) -> t
 // CHECK: %[[FILL:.+]] = linalg.fill ins(%[[CST]] : f32) outs(%[[EMPTY]] : tensor<3x3xf32>) -> tensor<3x3xf32>
 // CHECK: %{{.+}} = linalg.batch_reduce_matmul ins(%[[ARG0]], %[[ARG1]] : tensor<3x3x3xf32>, tensor<3x3x3xf32>) 
 // CHECK-SAME:  outs(%[[FILL]] : tensor<3x3xf32>) -> tensor<3x3xf32>
+
+// -----
+
+func.func @degeneralize_transpose(%arg0: tensor<64x32x16x32xf32>, 
+                                  %arg1: tensor<64x16x32x32xf32>) -> tensor<64x16x32x32xf32> {
+  %transposed = linalg.transpose ins(%arg0 : tensor<64x32x16x32xf32>) outs(%arg1 : tensor<64x16x32x32xf32>) 
+    permutation = [0, 2, 1, 3]
+  return %transposed : tensor<64x16x32x32xf32>
+}
+
+// CHECK-LABEL: degeneralize_transpose
+// CHECK-SAME: %[[ARG0:.+]]: tensor<64x32x16x32xf32>, %[[ARG1:.+]]: tensor<64x16x32x32xf32>
+// CHECK: %{{.+}} = linalg.transpose ins(%[[ARG0]] : tensor<64x32x16x32xf32>) 
+// CHECK-SAME:  outs(%[[ARG1]] : tensor<64x16x32x32xf32>) permutation = [0, 2, 1, 3]
+
+// -----
+
+func.func @degeneralize_transpose(%arg0: tensor<4x8xf32>, %arg1: tensor<8x4xf32>) -> tensor<8x4xf32> {
+  %0 = linalg.transpose ins(%arg0: tensor<4x8xf32>) outs(%arg1: tensor<8x4xf32>) permutation = [1, 0]
+  return %0 : tensor<8x4xf32>
+}
+
+// CHECK-LABEL: degeneralize_transpose
+// CHECK-SAME: %[[ARG0:.+]]: tensor<4x8xf32>, %[[ARG1:.+]]: tensor<8x4xf32>
+// CHECK: %{{.+}} = linalg.transpose ins(%[[ARG0]] : tensor<4x8xf32>) 
+// CHECK-SAME:  outs(%[[ARG1]] : tensor<8x4xf32>) permutation = [1, 0]

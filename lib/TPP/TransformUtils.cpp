@@ -12,6 +12,7 @@
 #include "TPP/TransformUtils.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/Utils/Utils.h"
@@ -317,6 +318,32 @@ isContraction(linalg::LinalgOp linalgOp) {
     .operation(NumAffineMaps(EqualsTo(3)))
     .region(MatchOne(0),
             WithOpChain<arith::MulFOp,
+                        arith::AddFOp>(/*captures=*/nullptr));
+  // clang-format on
+  if (!maybeContraction.match(linalgOp))
+    return failure();
+
+  auto dims = linalg::inferContractionDims(linalgOp);
+  if (failed(dims) ||
+      (dims->m.size() < 1 || dims->n.size() < 1 || dims->k.size() < 1)) {
+    return failure();
+  }
+  return dims;
+}
+
+FailureOr<linalg::ContractionDimensions>
+isContraction(linalg::LinalgOp linalgOp) {
+  using namespace mlir::tpp::structured_match;
+
+  // clang-format off
+  auto maybeContraction = 
+    StructuredOpMatcher::make<linalg::LinalgOp>()
+    .operation(NumDpsInits(EqualsTo(1)))
+    .operation(NumDpsInputs(EqualsTo(2)))
+    .operation(NumAffineMaps(EqualsTo(3)))
+    .output(MatchOne(0), HasMap(ProjectedPermutation()))
+    .region(MatchOne(0), 
+            WithOpChain<arith::MulFOp, 
                         arith::AddFOp>(/*captures=*/nullptr));
   // clang-format on
   if (!maybeContraction.match(linalgOp))

@@ -54,6 +54,19 @@ def ConvertTppToXsmm : Pass<"convert-tpp-to-xsmm", "func::FuncOp"> {
                            "xsmm::XsmmDialect"];
 }
 
+def ConvertLinalgToXsmm : Pass<"convert-linalg-to-xsmm", "func::FuncOp"> {
+  let summary = "Convert linalg to xsmm";
+  let constructor = "mlir::tpp::createConvertLinalgToXsmmPass()";
+  let description = [{
+    Convert linalg operations to XSMM operations.
+  }];
+  let dependentDialects = ["func::FuncDialect",
+                           "memref::MemRefDialect",
+                           "linalg::LinalgDialect",
+                           "scf::SCFDialect",
+                           "xsmm::XsmmDialect"];
+}
+
 def ConvertXsmmToFunc : Pass<"convert-xsmm-to-func", "ModuleOp"> {
   let summary = "Convert xsmm to func";
   let constructor = "mlir::tpp::createConvertXsmmToFuncPass()";

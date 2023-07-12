@@ -22,6 +22,7 @@ add_mlir_library(MLIRTPP
     RewriteBatchMatmulToMatmul.cpp
     LinalgDeGeneralize.cpp
     ConvertMemRefToTpp.cpp
+    ConvertLinalgToXsmm.cpp
     LinalgMake2D.cpp
 
   # Utils

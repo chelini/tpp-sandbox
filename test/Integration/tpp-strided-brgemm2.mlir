@@ -1,5 +1,11 @@
-// RUN: tpp-opt %s -tile-consumer-and-fuse-producers -bufferize -convert-linalg-to-xsmm | \
+// RUN: tpp-opt %s -bufferize -convert-linalg-to-xsmm | \
 // RUN: tpp-run -e entry -entry-point-result=void | FileCheck %s
+
+// RUN: tpp-opt %s | \
+// RUN: tpp-run -e entry -entry-point-result=void | FileCheck %s
+
+// RUN: tpp-opt %s -bufferize -convert-linalg-to-xsmm | \
+// RUN: FileCheck %s -check-prefix=IR
 
 // RUN: tpp-opt %s -tile-consumer-and-fuse-producers -bufferize -convert-linalg-to-xsmm | \
 // RUN: FileCheck %s -check-prefix=IR

@@ -86,7 +86,11 @@ func.func @mha_projections(%arg1: tensor<64x32x8x64xf32>,
       %24 = arith.addf %out, %23 : f32
       linalg.yield %24 : f32
   } -> tensor<64x8x32x32xf32>
-  // CHECK: linalg.generic
+  // CHECK: %{{.+}} = xsmm.brgemm.dispatch [32, 32, 64, 512, 32, 32, 1, 1] flags = (none) data_type = f32
+  // CHECK: scf.forall (%{{.+}}, %{{.+}}) in (64, 8) {
+  // CHECK: linalg.transpose
+  // CHECK: xsmm.brgemm
+  // CHECK: }
 
   %fill_4 = linalg.fill ins(%cst_1 : f32) outs(%0 : tensor<64x32x8x64xf32>) -> tensor<64x32x8x64xf32>
   %11 = linalg.generic {
@@ -99,7 +103,10 @@ func.func @mha_projections(%arg1: tensor<64x32x8x64xf32>,
       %24 = arith.addf %out, %23 : f32
       linalg.yield %24 : f32
   } -> tensor<64x32x8x64xf32>
-  // CHECK: linalg.generic
+  // CHECK: {{.+}} = xsmm.brgemm.dispatch [32, 64, 32, 32, 512, 512, 1, 1] flags = (none) data_type = f32
+  // CHECK: scf.forall (%{{.+}}) in (64, 8) {
+  // CHECK: xsmm.brgemm
+  // CHECK: }
 
   %result = tensor.empty() : tensor<64x32x512xf32>
   %fill_r = linalg.fill ins(%cst_1 : f32) outs(%result : tensor<64x32x512xf32>) -> tensor<64x32x512xf32>

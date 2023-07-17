@@ -151,7 +151,7 @@ func.func @brgemm_3(%arg0: memref<9x4x5xf32>, %arg1: memref<9x5x8xf32>, %arg2: m
 #map1 = affine_map<(kk, k, i, j) -> (kk, k, j)>
 #map2 = affine_map<(kk, k, i, j) -> (i, j)>
 
-func.func @brgemm_5(%arg0: memref<9x4x5xf32>, %arg1: memref<9x5x8xf32>, %arg2: memref<4x8xf32>) {
+func.func @brgemm_4(%arg0: memref<9x4x5xf32>, %arg1: memref<9x5x8xf32>, %arg2: memref<4x8xf32>) {
   linalg.generic {
     indexing_maps = [#map, #map1, #map2],
     iterator_types = ["reduction", "reduction", "parallel", "parallel"]}
@@ -165,7 +165,7 @@ func.func @brgemm_5(%arg0: memref<9x4x5xf32>, %arg1: memref<9x5x8xf32>, %arg2: m
   return
 }
 
-// CHECK-LABEL: brgemm_5
+// CHECK-LABEL: brgemm_4
 // CHECK-SAME: %[[ARG0:.+]]: memref<9x4x5xf32>, %[[ARG1:.+]]: memref<9x5x8xf32>, %[[ARG2:.+]]: memref<4x8xf32>
 // CHECK: %[[C9:.+]] = arith.constant 9 : i64
 // CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [4, 8, 5, 5, 8, 8, 20, 40] flags = (none) data_type = f32
@@ -177,11 +177,7 @@ func.func @brgemm_5(%arg0: memref<9x4x5xf32>, %arg1: memref<9x5x8xf32>, %arg2: m
 #map1 = affine_map<(i, j, kk, k) -> (kk, j, k)>
 #map2 = affine_map<(i, j, kk, k) -> (i, j)>
 
-// The minor dimension j on operand 2 does not have stride 1. It has stride k.
-func.func @invalid_brgemm_4(%arg0: memref<9x4x5xf32>, %arg1: memref<9x8x5xf32>, %arg2: memref<4x8xf32>) {
-  // CHECK-NOT: scf.forall
-  // CHECK-NOT: xsmm.brgemm
-  // CHECK: linalg.generic
+func.func @brgemm_5(%arg0: memref<9x4x5xf32>, %arg1: memref<9x8x5xf32>, %arg2: memref<4x8xf32>) {
   linalg.generic {
     indexing_maps = [#map, #map1, #map2],
     iterator_types = ["parallel", "parallel", "reduction", "reduction"]}
@@ -195,6 +191,15 @@ func.func @invalid_brgemm_4(%arg0: memref<9x4x5xf32>, %arg1: memref<9x8x5xf32>, 
   return
 }
 
+// CHECK-LABEL: brgemm_5
+// CHECK-SAME: %[[ARG0:.+]]: memref<9x4x5xf32>, %[[ARG1:.+]]: memref<9x8x5xf32>, %[[ARG2:.+]]: memref<4x8xf32>
+// CHECK: %[[C9:.+]] = arith.constant 9 : i64
+// CHECK: %[[ALLOC:.+]] = memref.alloc() : memref<9x5x8xf32>
+// CHECK: linalg.transpose ins(%[[ARG1]] : memref<9x8x5xf32>) 
+// CHECK-SAME:  outs(%[[ALLOC]] : memref<9x5x8xf32>) permutation = [0, 2, 1]
+// CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [4, 8, 5, 5, 8, 8, 20, 40] flags = (none) data_type = f32
+// CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ARG0]], %[[ALLOC]], %[[ARG2]], %[[C9]])
+
 // -----
 
 #map = affine_map<(i, k, kk, j, jj) -> (i, k, kk)>
@@ -202,8 +207,8 @@ func.func @invalid_brgemm_4(%arg0: memref<9x4x5xf32>, %arg1: memref<9x8x5xf32>, 
 #map2 = affine_map<(i, k, kk, j, jj) -> (i, j, jj)>
 
 // The minor k dimension has a stride of 2.
-// CHECK-LABEL: invalid_brgemm_5
-func.func @invalid_brgemm_5(%arg0: memref<32x8x64xf32, strided<[512, 64, 2], offset: ?>>, %arg1: memref<8x64x8x64xf32>) {
+// CHECK-LABEL: invalid_brgemm_6
+func.func @invalid_brgemm_6(%arg0: memref<32x8x64xf32, strided<[512, 64, 2], offset: ?>>, %arg1: memref<8x64x8x64xf32>) {
   %cst = arith.constant 0.000000e+00 : f32
   %alloc_0 = memref.alloc() {alignment = 64 : i64} : memref<32x8x64xf32>
   linalg.fill ins(%cst : f32) outs(%alloc_0 : memref<32x8x64xf32>)
@@ -225,13 +230,13 @@ func.func @invalid_brgemm_5(%arg0: memref<32x8x64xf32, strided<[512, 64, 2], off
 
 // -----
 
-#map = affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d2)>
-#map1 = affine_map<(d0, d1, d2, d3, d4) -> (d1, d2, d3, d4)>
-#map2 = affine_map<(d0, d1, d2, d3, d4) -> (d0, d3, d4)>
+#map = affine_map<(i, kk, k, j, jj) -> (i, kk, k)>
+#map1 = affine_map<(i, kk, k, j, jj) -> (kk, k, j, jj)>
+#map2 = affine_map<(i, kk, k, j, jj) -> (i, j, jj)>
 
 // Mixed semantics.
-// CHECK-LABEL: invalid_brgemm
-func.func @invalid_brgemm(%arg0: memref<32x8x64xf32, strided<[512, 64, 2], offset: ?>>, %arg1: tensor<8x64x8x64xf32>) {
+// CHECK-LABEL: invalid_brgemm_7
+func.func @invalid_brgemm_7(%arg0: memref<32x8x64xf32, strided<[512, 64, 2], offset: ?>>, %arg1: tensor<8x64x8x64xf32>) {
   %cst = arith.constant 0.000000e+00 : f32
   %alloc_0 = memref.alloc() {alignment = 64 : i64} : memref<32x8x64xf32>
   linalg.fill ins(%cst : f32) outs(%alloc_0 : memref<32x8x64xf32>)
@@ -253,13 +258,12 @@ func.func @invalid_brgemm(%arg0: memref<32x8x64xf32, strided<[512, 64, 2], offse
 
 // -----
 
-#map = affine_map<(d0, d1, d2) -> (d0, d1)>
-#map1 = affine_map<(d0, d1, d2) -> (d2, d1)>
-#map2 = affine_map<(d0, d1, d2) -> (d2, d0)>
+#map = affine_map<(i, k, j) -> (i, k)>
+#map1 = affine_map<(i, k, j) -> (j, k)>
+#map2 = affine_map<(i, k, j) -> (j, i)>
 
-// CHECK-LABEL: batch_matmul
-// We don't have stride 1 for j in operand 2.
-func.func @batch_matmul(%arg0: memref<64x32x8x64xf32>, %arg1: memref<64x32x8x64xf32>) -> memref<64x8x32x32xf32> {
+// CHECK-LABEL: brgemm_8
+func.func @brgemm_8(%arg0: memref<64x32x8x64xf32>, %arg1: memref<64x32x8x64xf32>) -> memref<64x8x32x32xf32> {
   %cst = arith.constant 0.000000e+00 : f32
   %alloc = memref.alloc() {alignment = 64 : i64} : memref<64x8x32x32xf32>
   scf.forall (%arg2, %arg3) in (64, 8) {
@@ -267,8 +271,11 @@ func.func @batch_matmul(%arg0: memref<64x32x8x64xf32>, %arg1: memref<64x32x8x64x
     linalg.fill ins(%cst : f32) outs(%subview : memref<32x32xf32, strided<[32, 1], offset: ?>>)
     %subview_0 = memref.subview %arg1[%arg2, 0, %arg3, 0] [1, 32, 1, 64] [1, 1, 1, 1] : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
     %subview_1 = memref.subview %arg0[%arg2, 0, %arg3, 0] [1, 32, 1, 64] [1, 1, 1, 1] : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
-    // CHECK: linalg.generic
-    // CHECK-NOT: xsmm
+    // CHECK: %{{.+}} = memref.alloc() : memref<64x32xf32>
+    // CHECK-NEXT: linalg.transpose ins(%{{.+}} : memref<32x64xf32, strided<[512, 1], offset: ?>>) 
+    // CHECK-SAME:  outs(%{{.+}} : memref<64x32xf32>) permutation = [1, 0] 
+    // CHECK: %{{.+}} = xsmm.brgemm.dispatch [32, 32, 64, 512, 32, 32, 1, 1] flags = (none) data_type = f32
+    // CHECK-NOT: linalg.generic
     linalg.generic {
       indexing_maps = [#map, #map1, #map2], 
       iterator_types = ["parallel", "reduction", "parallel"]} 
@@ -285,11 +292,11 @@ func.func @batch_matmul(%arg0: memref<64x32x8x64xf32>, %arg1: memref<64x32x8x64x
 
 // -----
 
-#map = affine_map<(d0, d1, d2) -> (d0, d1)>
-#map1 = affine_map<(d0, d1, d2) -> (d1, d2)>
-#map2 = affine_map<(d0, d1, d2) -> (d0, d2)>
+#map = affine_map<(i, k, j) -> (i, k)>
+#map1 = affine_map<(i, k, j) -> (k, j)>
+#map2 = affine_map<(i, k, j) -> (i, j)>
 
-func.func @batch_matmul_1(%arg0: memref<64x64x8x32xf32>, %arg1: memref<64x32x8x64xf32>) -> memref<64x8x32x32xf32> {
+func.func @brgemm_9(%arg0: memref<64x64x8x32xf32>, %arg1: memref<64x32x8x64xf32>) -> memref<64x8x32x32xf32> {
   %cst = arith.constant 0.000000e+00 : f32
   %alloc = memref.alloc() {alignment = 64 : i64} : memref<64x8x32x32xf32>
   scf.forall (%arg2, %arg3) in (64, 8) {
@@ -311,7 +318,7 @@ func.func @batch_matmul_1(%arg0: memref<64x64x8x32xf32>, %arg1: memref<64x32x8x6
   return %alloc : memref<64x8x32x32xf32>
 }
 
-// CHECK-LABEL: batch_matmul_1
+// CHECK-LABEL: brgemm_9
 // CHECK-SAME: %[[ARG0:.+]]: memref<64x64x8x32xf32>, %[[ARG1:.+]]: memref<64x32x8x64xf32>
 // CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i64
 // CHECK-DAG: %[[CST:.+]] = arith.constant 0.000000e+00 : f32
@@ -326,3 +333,199 @@ func.func @batch_matmul_1(%arg0: memref<64x64x8x32xf32>, %arg1: memref<64x32x8x6
 // CHECK-SAME:  : memref<64x64x8x32xf32> to memref<64x32xf32, strided<[256, 1], offset: ?>>
 // CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [32, 32, 64, 512, 256, 32, 1, 1] flags = (none) data_type = f32
 // CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[SUB_0]], %[[SUB_1]], %[[SUB]], %[[C1]])
+
+// -----
+
+#map = affine_map<(i, j, k) -> (i, k)>
+#map1 = affine_map<(i, j, k) -> (k, j)>
+#map2 = affine_map<(i, j, k) -> (i, j)>
+
+func.func @gemm_1(%arg0: memref<64x32xf32>, %arg1: memref<32x64xf32>, %arg2: memref<64x64xf32>) {
+  linalg.generic {
+    indexing_maps = [#map, #map1, #map2],
+    iterator_types = ["parallel", "parallel", "reduction"]} 
+    ins(%arg0, %arg1: memref<64x32xf32>, memref<32x64xf32>)
+    outs(%arg2: memref<64x64xf32>) {
+  ^bb0(%in: f32, %in_4: f32, %out: f32):
+      %1 = arith.mulf %in, %in_4 : f32
+      %2 = arith.addf %out, %1 : f32
+      linalg.yield %2 : f32
+  }
+  return
+}
+
+// CHECK-LABEL: gemm_1
+// CHECK-SAME: %[[ARG0:.+]]: memref<64x32xf32>, %[[ARG1:.+]]: memref<32x64xf32>, %[[ARG2:.+]]: memref<64x64xf32>
+// CHECK: %[[C1:.+]] = arith.constant 1 : i64
+// CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [64, 64, 32, 32, 64, 64, 1, 1] flags = (none) data_type = f32
+// CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ARG0]], %[[ARG1]], %[[ARG2]], %[[C1]])
+
+// -----
+
+#map = affine_map<(k, i, j) -> (i, k)>
+#map1 = affine_map<(k, i, j) -> (k, j)>
+#map2 = affine_map<(k, i, j) -> (i, j)>
+
+func.func @gemm_2(%arg0: memref<64x32xf32>, %arg1: memref<32x64xf32>, %arg2: memref<64x64xf32>) {
+  linalg.generic {
+    indexing_maps = [#map, #map1, #map2],
+    iterator_types = ["reduction", "parallel", "parallel"]} 
+    ins(%arg0, %arg1: memref<64x32xf32>, memref<32x64xf32>)
+    outs(%arg2: memref<64x64xf32>) {
+  ^bb0(%in: f32, %in_4: f32, %out: f32):
+      %1 = arith.mulf %in, %in_4 : f32
+      %2 = arith.addf %out, %1 : f32
+      linalg.yield %2 : f32
+  }
+  return
+}
+
+// CHECK-LABEL: gemm_2
+// CHECK-SAME: %[[ARG0:.+]]: memref<64x32xf32>, %[[ARG1:.+]]: memref<32x64xf32>, %[[ARG2:.+]]: memref<64x64xf32>
+// CHECK: %[[C1:.+]] = arith.constant 1 : i64
+// CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [64, 64, 32, 32, 64, 64, 1, 1] flags = (none) data_type = f32
+// CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ARG0]], %[[ARG1]], %[[ARG2]], %[[C1]])
+
+// -----
+
+#map = affine_map<(i, j, k) -> (i, k)>
+#map1 = affine_map<(i, j, k) -> (k, j)>
+#map2 = affine_map<(i, j, k) -> (j, i)>
+
+func.func @gemm_3(%arg0: memref<64x32xf32>, %arg1: memref<32x64xf32>, %arg2: memref<64x64xf32>) {
+  linalg.generic {
+    indexing_maps = [#map, #map1, #map2],
+    iterator_types = ["parallel", "parallel", "reduction"]} 
+    ins(%arg0, %arg1: memref<64x32xf32>, memref<32x64xf32>)
+    outs(%arg2: memref<64x64xf32>) {
+  ^bb0(%in: f32, %in_4: f32, %out: f32):
+      %1 = arith.mulf %in, %in_4 : f32
+      %2 = arith.addf %out, %1 : f32
+      linalg.yield %2 : f32
+  }
+  return
+}
+
+// CHECK-LABEL: gemm_3
+// CHECK-SAME: %[[ARG0:.+]]: memref<64x32xf32>, %[[ARG1:.+]]: memref<32x64xf32>, %[[ARG2:.+]]: memref<64x64xf32>
+// CHECK: %[[C1:.+]] = arith.constant 1 : i64
+// CHECK: %[[ALLOC:.+]] = memref.alloc() : memref<32x64xf32>
+// CHECK: linalg.transpose ins(%[[ARG0]] : memref<64x32xf32>) 
+// CHECK-SAME:  outs(%[[ALLOC]] : memref<32x64xf32>) permutation = [1, 0]
+// CHECK: %[[ALLOC_0:.+]] = memref.alloc() : memref<64x32xf32>
+// CHECK: linalg.transpose ins(%[[ARG1]] : memref<32x64xf32>) 
+// CHECK-SAME:  outs(%[[ALLOC_0]] : memref<64x32xf32>) permutation = [1, 0]
+// CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [64, 64, 32, 32, 64, 64, 1, 1] flags = (none) data_type = f32
+// CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ALLOC_0]], %[[ALLOC]], %[[ARG2]], %[[C1]])
+
+// -----
+
+#map = affine_map<(i, j, k) -> (i, k)>
+#map1 = affine_map<(i, j, k) -> (j, k)>
+#map2 = affine_map<(i, j, k) -> (j, i)>
+
+func.func @gemm_4(%arg0: memref<64x32xf32>, %arg1: memref<64x32xf32>, %arg2: memref<64x64xf32>) {
+  linalg.generic {
+    indexing_maps = [#map, #map1, #map2],
+    iterator_types = ["parallel", "parallel", "reduction"]} 
+    ins(%arg0, %arg1: memref<64x32xf32>, memref<64x32xf32>)
+    outs(%arg2: memref<64x64xf32>) {
+  ^bb0(%in: f32, %in_4: f32, %out: f32):
+      %1 = arith.mulf %in, %in_4 : f32
+      %2 = arith.addf %out, %1 : f32
+      linalg.yield %2 : f32
+  }
+  return
+}
+
+// CHECK-LABEL: gemm_4
+// CHECK-SAME: %[[ARG0:.+]]: memref<64x32xf32>, %[[ARG1:.+]]: memref<64x32xf32>, %[[ARG2:.+]]: memref<64x64xf32>
+// CHECK: %[[C1:.+]] = arith.constant 1 : i64
+// CHECK: %[[ALLOC:.+]] = memref.alloc() : memref<32x64xf32>
+// CHECK: linalg.transpose ins(%[[ARG0]] : memref<64x32xf32>) 
+// CHECK-SAME:  outs(%[[ALLOC]] : memref<32x64xf32>) permutation = [1, 0]
+// CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [64, 64, 32, 32, 64, 64, 1, 1] flags = (none) data_type = f32
+// CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ARG1]], %[[ALLOC]], %[[ARG2]], %[[C1]])
+
+// -----
+
+#map = affine_map<(i, j, k) -> (k, i)>
+#map1 = affine_map<(i, j, k) -> (j, k)>
+#map2 = affine_map<(i, j, k) -> (j, i)>
+
+func.func @gemm_5(%arg0: memref<32x64xf32>, %arg1: memref<64x32xf32>, %arg2: memref<64x64xf32>) {
+  linalg.generic {
+    indexing_maps = [#map, #map1, #map2],
+    iterator_types = ["parallel", "parallel", "reduction"]} 
+    ins(%arg0, %arg1: memref<32x64xf32>, memref<64x32xf32>)
+    outs(%arg2: memref<64x64xf32>) {
+  ^bb0(%in: f32, %in_4: f32, %out: f32):
+      %1 = arith.mulf %in, %in_4 : f32
+      %2 = arith.addf %out, %1 : f32
+      linalg.yield %2 : f32
+  }
+  return
+}
+
+// CHECK-LABEL: gemm_5
+// CHECK-SAME: %[[ARG0:.+]]: memref<32x64xf32>, %[[ARG1:.+]]: memref<64x32xf32>, %[[ARG2:.+]]: memref<64x64xf32>
+// CHECK: %[[C1:.+]] = arith.constant 1 : i64
+// CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [64, 64, 32, 32, 64, 64, 1, 1] flags = (none) data_type = f32
+// CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ARG1]], %[[ARG0]], %[[ARG2]], %[[C1]])
+
+// -----
+
+#map = affine_map<(i, j, k) -> (i, k)>
+#map1 = affine_map<(i, j, k) -> (k, j)>
+#map2 = affine_map<(i, j, k) -> (i, j)>
+
+// Sizes not statically known.
+// CHECK-LABEL: gemm_6
+func.func @gemm_6(%arg0: memref<64x32xf32>, %arg1: memref<?x?xf32>, %arg2: memref<64x64xf32>) {
+  // CHECK: linalg.generic
+  // CHECK-NOT: xsmm.brgemm
+  linalg.generic {
+    indexing_maps = [#map, #map1, #map2],
+    iterator_types = ["parallel", "parallel", "reduction"]} 
+    ins(%arg0, %arg1: memref<64x32xf32>, memref<?x?xf32>)
+    outs(%arg2: memref<64x64xf32>) {
+  ^bb0(%in: f32, %in_4: f32, %out: f32):
+      %1 = arith.mulf %in, %in_4 : f32
+      %2 = arith.addf %out, %1 : f32
+      linalg.yield %2 : f32
+  }
+  return
+}
+
+// -----
+
+#map = affine_map<(b, i, j, k) -> (b, i, k)>
+#map1 = affine_map<(b, i, j, k) -> (b, k, j)>
+#map2 = affine_map<(b, i, j, k) -> (b, i, j)>
+
+func.func @simple_batch(%arg0: memref<5x64x32xf32>, %arg1: memref<5x32x64xf32>, %arg2: memref<5x64x64xf32>) {
+  linalg.generic {
+    indexing_maps = [#map, #map1, #map2],
+    iterator_types = ["parallel", "parallel", "parallel", "reduction"]}
+    ins(%arg0, %arg1: memref<5x64x32xf32>, memref<5x32x64xf32>)
+    outs(%arg2: memref<5x64x64xf32>) {
+  ^bb0(%in: f32, %in_4: f32, %out: f32):
+      %1 = arith.mulf %in, %in_4 : f32
+      %2 = arith.addf %out, %1 : f32
+      linalg.yield %2 : f32
+  }
+  return
+}
+
+// CHECK-LABEL: simple_batch
+// CHECK-SAME: %[[ARG0:.+]]: memref<5x64x32xf32>, %[[ARG1:.+]]: memref<5x32x64xf32>, %[[ARG2:.+]]: memref<5x64x64xf32>
+// CHECK: %[[C1:.+]] = arith.constant 1 : i64
+// CHECK: scf.forall (%[[ARG3:.+]]) in (5)
+// CHECK: %[[SUB:.+]] = memref.subview %[[ARG0]][%[[ARG3]], 0, 0] [1, 64, 32] [1, 1, 1] 
+// CHECK-SAME:  : memref<5x64x32xf32> to memref<1x64x32xf32, strided<[2048, 32, 1], offset: ?>>
+// CHECK: %[[SUB_0:.+]] = memref.subview %[[ARG1]][%[[ARG3]], 0, 0] [1, 32, 64] [1, 1, 1] 
+// CHECK-SAME:  : memref<5x32x64xf32> to memref<1x32x64xf32, strided<[2048, 64, 1], offset: ?>>
+// CHECK: %[[SUB_1:.+]] = memref.subview %[[ARG2]][%[[ARG3]], 0, 0] [1, 64, 64] [1, 1, 1] 
+// CHECK-SAME:  : memref<5x64x64xf32> to memref<1x64x64xf32, strided<[4096, 64, 1], offset: ?>>
+// CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [64, 64, 32, 32, 64, 64, 1, 1] flags = (none) data_type = f32
+// CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[SUB]], %[[SUB_0]], %[[SUB_1]], %[[C1]])

@@ -1,5 +1,11 @@
-// RUN: tpp-opt %s -tile-consumer-and-fuse-producers -bufferize -convert-linalg-to-xsmm | \
+// RUN: tpp-opt %s -bufferize -convert-linalg-to-xsmm | \
 // RUN: tpp-run -e entry -entry-point-result=void | FileCheck %s
+
+// RUN: tpp-opt %s | \
+// RUN: tpp-run -e entry -entry-point-result=void | FileCheck %s
+
+// RUN: tpp-opt %s -bufferize -convert-linalg-to-xsmm | \
+// RUN: FileCheck %s -check-prefix=IR
 
 // RUN: tpp-opt %s -tile-consumer-and-fuse-producers -bufferize -convert-linalg-to-xsmm | \
 // RUN: FileCheck %s -check-prefix=IR
@@ -9,10 +15,10 @@
 !C_tensor_t = tensor<4x16xf32>
 !D_tensor_t = tensor<4x16xf32>
 
-#map = affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d2, d3)>
-#map1 = affine_map<(d0, d1, d2, d3, d4, d5) -> (d2, d3, d4, d5)>
-#map2 = affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d4, d5)>
-#map3 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
+#map = affine_map<(i, ii, k, kk, j, jj) -> (i, ii, k, kk)>
+#map1 = affine_map<(i, ii, k, kk, j, jj) -> (k, kk, j, jj)>
+#map2 = affine_map<(i, ii, k, kk, j, jj) -> (i, ii, j, jj)>
+#map3 = affine_map<(i, ii, j, jj) -> (i, ii, j, jj)>
 
 func.func @matmul_static(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t, %D : !D_tensor_t) {
   %A_exp = tensor.expand_shape %A [[0, 1], [2, 3]] :

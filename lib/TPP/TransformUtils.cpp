@@ -489,7 +489,6 @@ isContraction(linalg::LinalgOp linalgOp) {
     .operation(NumDpsInits(EqualsTo(1)))
     .operation(NumDpsInputs(EqualsTo(2)))
     .operation(NumAffineMaps(EqualsTo(3)))
-    .output(MatchOne(0), HasMap(ProjectedPermutation()))
     .region(MatchOne(0), 
             WithOpChain<arith::MulFOp, 
                         arith::AddFOp>(/*captures=*/nullptr));

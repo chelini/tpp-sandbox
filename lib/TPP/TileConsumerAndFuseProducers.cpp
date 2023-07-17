@@ -623,6 +623,7 @@ getTileForEltWiseConsumer(Operation *consumer, Operation *producer,
 
   size_t loopsConsumer = consumerOp.getNumLoops();
   SmallVector<int64_t> tilesConsumer(loopsConsumer, 0);
+  // This is wrong see: tpp-strided-brgemm1.mlir expect to fuse along i and j.
   for (auto expr : llvm::enumerate(outputMapProd.getResults())) {
     auto pos = expr.value().cast<AffineDimExpr>().getPosition();
     if (pos < loopsConsumer)

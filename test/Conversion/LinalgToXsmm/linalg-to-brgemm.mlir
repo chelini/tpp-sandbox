@@ -250,3 +250,79 @@ func.func @invalid_brgemm(%arg0: memref<32x8x64xf32, strided<[512, 64, 2], offse
   }
   return 
 }
+
+// -----
+
+#map = affine_map<(d0, d1, d2) -> (d0, d1)>
+#map1 = affine_map<(d0, d1, d2) -> (d2, d1)>
+#map2 = affine_map<(d0, d1, d2) -> (d2, d0)>
+
+// CHECK-LABEL: batch_matmul
+// We don't have stride 1 for j in operand 2.
+func.func @batch_matmul(%arg0: memref<64x32x8x64xf32>, %arg1: memref<64x32x8x64xf32>) -> memref<64x8x32x32xf32> {
+  %cst = arith.constant 0.000000e+00 : f32
+  %alloc = memref.alloc() {alignment = 64 : i64} : memref<64x8x32x32xf32>
+  scf.forall (%arg2, %arg3) in (64, 8) {
+    %subview = memref.subview %alloc[%arg2, %arg3, 0, 0] [1, 1, 32, 32] [1, 1, 1, 1] : memref<64x8x32x32xf32> to memref<32x32xf32, strided<[32, 1], offset: ?>>
+    linalg.fill ins(%cst : f32) outs(%subview : memref<32x32xf32, strided<[32, 1], offset: ?>>)
+    %subview_0 = memref.subview %arg1[%arg2, 0, %arg3, 0] [1, 32, 1, 64] [1, 1, 1, 1] : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
+    %subview_1 = memref.subview %arg0[%arg2, 0, %arg3, 0] [1, 32, 1, 64] [1, 1, 1, 1] : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
+    // CHECK: linalg.generic
+    // CHECK-NOT: xsmm
+    linalg.generic {
+      indexing_maps = [#map, #map1, #map2], 
+      iterator_types = ["parallel", "reduction", "parallel"]} 
+      ins(%subview_0, %subview_1 : memref<32x64xf32, strided<[512, 1], offset: ?>>, memref<32x64xf32, strided<[512, 1], offset: ?>>) 
+      outs(%subview : memref<32x32xf32, strided<[32, 1], offset: ?>>) {
+      ^bb0(%in: f32, %in_2: f32, %out: f32):
+        %0 = arith.mulf %in, %in_2 : f32
+        %1 = arith.addf %out, %0 : f32
+        linalg.yield %1 : f32
+    }
+  }
+  return %alloc : memref<64x8x32x32xf32>
+}
+
+// -----
+
+#map = affine_map<(d0, d1, d2) -> (d0, d1)>
+#map1 = affine_map<(d0, d1, d2) -> (d1, d2)>
+#map2 = affine_map<(d0, d1, d2) -> (d0, d2)>
+
+func.func @batch_matmul_1(%arg0: memref<64x64x8x32xf32>, %arg1: memref<64x32x8x64xf32>) -> memref<64x8x32x32xf32> {
+  %cst = arith.constant 0.000000e+00 : f32
+  %alloc = memref.alloc() {alignment = 64 : i64} : memref<64x8x32x32xf32>
+  scf.forall (%arg2, %arg3) in (64, 8) {
+    %subview = memref.subview %alloc[%arg2, %arg3, 0, 0] [1, 1, 32, 32] [1, 1, 1, 1] : memref<64x8x32x32xf32> to memref<32x32xf32, strided<[32, 1], offset: ?>>
+    linalg.fill ins(%cst : f32) outs(%subview : memref<32x32xf32, strided<[32, 1], offset: ?>>)
+    %subview_0 = memref.subview %arg1[%arg2, 0, %arg3, 0] [1, 32, 1, 64] [1, 1, 1, 1] : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
+    %subview_1 = memref.subview %arg0[%arg2, 0, %arg3, 0] [1, 64, 1, 32] [1, 1, 1, 1] : memref<64x64x8x32xf32> to memref<64x32xf32, strided<[256, 1], offset: ?>>
+    linalg.generic {
+      indexing_maps = [#map, #map1, #map2], 
+      iterator_types = ["parallel", "reduction", "parallel"]} 
+      ins(%subview_0, %subview_1 : memref<32x64xf32, strided<[512, 1], offset: ?>>, memref<64x32xf32, strided<[256, 1], offset: ?>>) 
+      outs(%subview : memref<32x32xf32, strided<[32, 1], offset: ?>>) {
+      ^bb0(%in: f32, %in_2: f32, %out: f32):
+        %0 = arith.mulf %in, %in_2 : f32
+        %1 = arith.addf %out, %0 : f32
+        linalg.yield %1 : f32
+    }
+  }
+  return %alloc : memref<64x8x32x32xf32>
+}
+
+// CHECK-LABEL: batch_matmul_1
+// CHECK-SAME: %[[ARG0:.+]]: memref<64x64x8x32xf32>, %[[ARG1:.+]]: memref<64x32x8x64xf32>
+// CHECK-DAG: %[[C1:.+]] = arith.constant 1 : i64
+// CHECK-DAG: %[[CST:.+]] = arith.constant 0.000000e+00 : f32
+// CHECK: %[[ALLOC:.+]] = memref.alloc() {alignment = 64 : i64} : memref<64x8x32x32xf32>
+// CHECK: scf.forall (%[[ARG2:.+]], %[[ARG3:.+]]) in (64, 8)
+// CHECK: %[[SUB:.+]] = memref.subview %[[ALLOC]][%[[ARG2]], %[[ARG3]], 0, 0] [1, 1, 32, 32] [1, 1, 1, 1] 
+// CHECK-SAME:  : memref<64x8x32x32xf32> to memref<32x32xf32, strided<[32, 1], offset: ?>>
+// CHECK: linalg.fill ins(%[[CST]] : f32) outs(%[[SUB]] : memref<32x32xf32, strided<[32, 1], offset: ?>>)
+// CHECK: %[[SUB_0:.+]] = memref.subview %[[ARG1]][%[[ARG2]], 0, %[[ARG3]], 0] [1, 32, 1, 64] [1, 1, 1, 1] 
+// CHECK-SAME:  : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
+// CHECK: %[[SUB_1:.+]] = memref.subview %[[ARG0]][%[[ARG2]], 0, %[[ARG3]], 0] [1, 64, 1, 32] [1, 1, 1, 1] 
+// CHECK-SAME:  : memref<64x64x8x32xf32> to memref<64x32xf32, strided<[256, 1], offset: ?>>
+// CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [32, 32, 64, 512, 256, 32, 1, 1] flags = (none) data_type = f32
+// CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[SUB_0]], %[[SUB_1]], %[[SUB]], %[[C1]])

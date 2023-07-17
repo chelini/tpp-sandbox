@@ -75,9 +75,9 @@ static FailureOr<SmallVector<int64_t>> verifyStrides(OpOperand *operand,
     return failure();
   }
 
-  LLVM_DEBUG(llvm::dbgs() << "Strides for dim: " << dim
+  LLVM_DEBUG(llvm::dbgs() << "Strides for dim: " << dim << " ( " << strides[dim]
+                          << " )"
                           << " on operand: " << operand->get() << "\n");
-  LLVM_DEBUG(llvm::interleaveComma(strides, llvm::dbgs()));
   LLVM_DEBUG(llvm::dbgs() << "\n");
 
   if (strides[dim] != 1) {
@@ -101,10 +101,14 @@ static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::GenericOp genericOp) {
   if (!genericOp)
     return failure();
   auto contractionDims = linalgx::utils::isContraction(genericOp);
-  if (failed(contractionDims))
+  if (failed(contractionDims)) {
+    LLVM_DEBUG(llvm::dbgs() << genericOp << "\nnot a contraction op\n");
     return failure();
+  }
   if (contractionDims->m.size() != 1 || contractionDims->n.size() != 1 ||
-      contractionDims->k.size() != 2 || contractionDims->batch.size() != 0) {
+      (contractionDims->k.size() != 2 && contractionDims->k.size() != 1) ||
+      contractionDims->batch.size() != 0) {
+    LLVM_DEBUG(llvm::dbgs() << genericOp << "\nnot a matmul or brgemm op\n");
     return failure();
   }
   unsigned classifiedLoops =
@@ -116,7 +120,9 @@ static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::GenericOp genericOp) {
   unsigned m = contractionDims->m[0];
   unsigned n = contractionDims->n[0];
   unsigned k = contractionDims->k.back();
-  unsigned batch = contractionDims->k.front();
+  unsigned batch = (contractionDims->k.size() == 2)
+                       ? contractionDims->k.front()
+                       : std::numeric_limits<unsigned>::max();
 
   LLVM_DEBUG(llvm::dbgs() << "Candidate dims: "
                           << "\n");
@@ -187,15 +193,18 @@ struct ConvertGenericToBrgemm : public OpRewritePattern<linalg::GenericOp> {
     auto mPosCodomainC = getPosInCodomain(m, operandC, genericOp);
     auto batchPosCodomainA = getPosInCodomain(batch, operandA, genericOp);
     auto batchPosCodomainB = getPosInCodomain(batch, operandB, genericOp);
-    if (!mPosCodomainA || !kPosCodomainB || !mPosCodomainC ||
-        !batchPosCodomainA || !batchPosCodomainB) {
+    if (!mPosCodomainA || !kPosCodomainB || !mPosCodomainC) {
       return failure();
     }
     int64_t lda = brgemmInfo->stridesOnA[*mPosCodomainA];
     int64_t ldb = brgemmInfo->stridesOnB[*kPosCodomainB];
     int64_t ldc = brgemmInfo->stridesOnC[*mPosCodomainC];
-    int64_t strideA = brgemmInfo->stridesOnA[*batchPosCodomainA];
-    int64_t strideB = brgemmInfo->stridesOnB[*batchPosCodomainB];
+    int64_t strideA = 1;
+    if (batchPosCodomainA)
+      strideA = brgemmInfo->stridesOnA[*batchPosCodomainA];
+    int64_t strideB = 1;
+    if (batchPosCodomainB)
+      strideB = brgemmInfo->stridesOnB[*batchPosCodomainB];
 
     DenseI64ArrayAttr dims = DenseI64ArrayAttr::get(
         rewriter.getContext(),
@@ -210,8 +219,11 @@ struct ConvertGenericToBrgemm : public OpRewritePattern<linalg::GenericOp> {
     Value dispatched = rewriter.create<xsmm::BrgemmDispatchOp>(
         loc, integer64, dims, flags, dtype);
 
+    unsigned batchVal = 1;
+    if (batch != std::numeric_limits<unsigned>::max())
+      batchVal = loops[batch];
     Value batchDim = rewriter.create<arith::ConstantOp>(
-        loc, integer64, rewriter.getIntegerAttr(integer64, loops[batch]));
+        loc, integer64, rewriter.getIntegerAttr(integer64, batchVal));
     SmallVector<Value> invokeOperands;
     invokeOperands.push_back(dispatched);
     invokeOperands.append(genericOp->getOperands().begin(),
@@ -251,6 +263,8 @@ void ConvertLinalgToXsmm::runOnOperation() {
     // BRGEMM). Fail if the stride is not 1.
     unsigned minorDimN = contractionDims->n.back();
     unsigned minorDimK = contractionDims->k.back();
+    LLVM_DEBUG(llvm::dbgs() << "minor dim N: " << minorDimN << "\n");
+    LLVM_DEBUG(llvm::dbgs() << "minor dim K: " << minorDimK << "\n");
     OpOperand *operandA = genericOp.getDpsInputOperands()[0];
     OpOperand *operandB = genericOp.getDpsInputOperands()[1];
     OpOperand *operandC = genericOp.getDpsInitOperands()[0];

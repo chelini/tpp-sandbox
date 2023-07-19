@@ -610,6 +610,8 @@ getTileForEltWiseConsumer(Operation *consumer, Operation *producer,
   LLVM_DEBUG(llvm::dbgs() << "Original producer tiles: \n");
   LLVM_DEBUG(llvm::interleaveComma(tilesProducer, llvm::dbgs()));
   LLVM_DEBUG(llvm::dbgs() << "\n");
+  LLVM_DEBUG(llvm::dbgs() << "Consumer: " << *consumer << "\n");
+  LLVM_DEBUG(llvm::dbgs() << "Producer: " << *producer << "\n");
 
   if (consumer == producer)
     return tilesProducer;
@@ -618,6 +620,8 @@ getTileForEltWiseConsumer(Operation *consumer, Operation *producer,
       producerOp.getMatchingIndexingMap(producerOp.getDpsInitOperands()[0]);
   AffineMap outputMapCons =
       consumerOp.getMatchingIndexingMap(consumerOp.getDpsInitOperands()[0]);
+  LLVM_DEBUG(llvm::dbgs() << "Output map prod: " << outputMapProd << "\n");
+  LLVM_DEBUG(llvm::dbgs() << "Output map cons: " << outputMapCons << "\n");
 
   assert(outputMapProd.isProjectedPermutation() && outputMapCons.isIdentity());
 

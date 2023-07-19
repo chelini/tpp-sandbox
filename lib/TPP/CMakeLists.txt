@@ -23,6 +23,7 @@ add_mlir_library(MLIRTPP
     LinalgDeGeneralize.cpp
     ConvertMemRefToTpp.cpp
     ConvertLinalgToXsmm.cpp
+    CanonicalizeContractions.cpp
     LinalgMake2D.cpp
 
   # Utils

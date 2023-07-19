@@ -144,6 +144,8 @@ std::unique_ptr<OperationPass<func::FuncOp>>
 createRewriteBatchMatmulToMatmulPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createConvertMemRefToTppPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createConvertLinalgToXsmmPass();
+std::unique_ptr<OperationPass<func::FuncOp>>
+createCanonicalizeContractionsPass();
 
 // Testing passes.
 void registerTestStructuralMatchers();

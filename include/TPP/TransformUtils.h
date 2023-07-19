@@ -22,6 +22,7 @@ class TilingInterface;
 
 namespace linalg {
 class LinalgOp;
+class GenericOp;
 struct ContractionDimensions;
 } // namespace linalg
 
@@ -85,6 +86,24 @@ bool validateFullTilesOnDims(TilingInterface tileOp,
 // Returns true if the linalg operation has a MulAdd region.
 bool hasMulAddBody(linalg::LinalgOp linalgOp,
                    SmallVectorImpl<Value> *capturedOperands = nullptr);
+
+// Return the position of `dim` in the codomain of `operand`.
+std::optional<unsigned> getPosInCodomain(unsigned dim, OpOperand *operand,
+                                         linalg::GenericOp genericOp);
+
+// Emit a transpose operation for `operand` by swapping `dim` with `newDim`.
+void emitTransposeOnOperand(RewriterBase &rewriter, linalg::GenericOp genericOp,
+                            OpOperand *operand, unsigned dim, unsigned newDim);
+
+// Move the minor dimension as innermost.
+// Example:
+// C(m, n) += A(m, k) * B(k, n)
+// Move n innermost for C and B.
+// Move k innermost for A.
+FailureOr<linalg::GenericOp>
+makeMinorDimensionsInnerMost(RewriterBase &rewriter,
+                             linalg::GenericOp genericOp, unsigned minorDimM,
+                             unsigned minorDimN, unsigned minorDimK);
 
 // Rewrite scf.for to scf.forall. Assumes the loop to be parallel and
 // marked with `kLoopId`.

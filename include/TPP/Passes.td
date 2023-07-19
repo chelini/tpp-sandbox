@@ -309,6 +309,15 @@ def ConvInitSimplify : Pass<"conv-init-simplify", "func::FuncOp"> {
   let constructor = "mlir::tpp::createConvInitSimplifyPass()";
 }
 
+def CanonicalizeContractions : Pass<"canonicalize-contractions", "func::FuncOp"> {
+  let summary = "Canonicalize contractions";
+  let description = [{
+    Detect possible contractions and make them mappable to Brgemm operations
+    by re-arranging the dimension in the canonical GEMM.
+  }];
+  let constructor = "mlir::tpp::createCanonicalizeContractionsPass()";
+}
+
 def Bufferize : Pass<"bufferize", "ModuleOp"> {
   let summary = "Bufferize tensor to memref for the entire module";
   let constructor = "mlir::tpp::createBufferizePass()";

@@ -17,7 +17,11 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/Utils/Utils.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Utils/IndexingUtils.h"
 #include "mlir/IR/AffineExprVisitor.h"
+#include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "transform-utils"
 
 namespace mlir {
 
@@ -417,6 +421,171 @@ bool validateFullTilesOnDims(TilingInterface tileOp,
       return false;
   }
   return true;
+}
+
+// Return the position of `dim` in the codomain of `operand`.
+std::optional<unsigned> getPosInCodomain(unsigned dim, OpOperand *operand,
+                                         linalg::GenericOp genericOp) {
+  assert(operand->getOwner() == genericOp);
+  return genericOp.getMatchingIndexingMap(operand).getResultPosition(
+      getAffineDimExpr(dim, genericOp.getContext()));
+}
+
+// Emit a transpose operation for `operand` by swapping `dim` with `newDim`.
+// Emit a transpose operation for `operand` by swapping the dimensions at index
+// `dim` with `newDim`.
+void emitTransposeOnOperand(RewriterBase &rewriter, linalg::GenericOp genericOp,
+                            OpOperand *operand, unsigned dim, unsigned newDim) {
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPoint(genericOp);
+
+  Location loc = genericOp.getLoc();
+  auto operandType = operand->get().getType().cast<ShapedType>();
+  auto rank = operandType.getRank();
+  SmallVector<int64_t> shape = llvm::to_vector(operandType.getShape());
+  auto permutation = llvm::to_vector(llvm::seq<int64_t>(0, rank));
+  std::swap(permutation[dim], permutation[newDim]);
+  assert(isPermutationVector(permutation));
+  LLVM_DEBUG(llvm::interleaveComma(
+      permutation, llvm::dbgs() << "[emitTransposeOnOperand] Perm: "));
+  LLVM_DEBUG(llvm::dbgs() << "\n");
+
+  applyPermutationToVector<int64_t>(shape, permutation);
+  Value buffer;
+  if (genericOp.hasTensorSemantics()) {
+    buffer = rewriter.create<tensor::EmptyOp>(loc, shape,
+                                              operandType.getElementType());
+    buffer = rewriter
+                 .create<linalg::TransposeOp>(loc, operand->get(), buffer,
+                                              permutation)
+                 .getResults()[0];
+  } else {
+    buffer = rewriter.create<memref::AllocOp>(
+        loc, MemRefType::get(shape, operandType.getElementType()));
+    rewriter.create<linalg::TransposeOp>(loc, operand->get(), buffer,
+                                         permutation);
+  }
+
+  SmallVector<AffineMap> indexingMaps = genericOp.getIndexingMapsArray();
+  AffineMap operandMap = indexingMaps[operand->getOperandNumber()];
+  LLVM_DEBUG(llvm::dbgs() << "[emitTransposeOnOperand] Old map: " << operandMap
+                          << "\n");
+  SmallVector<AffineExpr> mapResults = llvm::to_vector(operandMap.getResults());
+  applyPermutationToVector<AffineExpr>(mapResults, permutation);
+  AffineMap newMap =
+      AffineMap::get(operandMap.getNumDims(), operandMap.getNumSymbols(),
+                     mapResults, genericOp.getContext());
+  LLVM_DEBUG(llvm::dbgs() << "[emitTransposeOnOperand] New map: " << newMap
+                          << "\n");
+  indexingMaps[operand->getOperandNumber()] = newMap;
+  // TODO: We probably cannot update the result in place.
+  rewriter.updateRootInPlace(genericOp, [&]() {
+    genericOp->setOperand(operand->getOperandNumber(), buffer);
+    genericOp.setIndexingMapsAttr(
+        ArrayAttr::get(genericOp.getContext(),
+                       llvm::to_vector(llvm::map_range(
+                           indexingMaps, [](AffineMap map) -> Attribute {
+                             return AffineMapAttr::get(map);
+                           }))));
+  });
+  if (genericOp.hasBufferSemantics()) {
+    rewriter.setInsertionPointAfter(genericOp);
+    rewriter.create<memref::DeallocOp>(genericOp.getLoc(), buffer);
+  }
+}
+
+static bool isInnerMostDim(OpOperand *operand, unsigned minorDim) {
+  auto shapedType = operand->get().getType().cast<ShapedType>();
+  unsigned rank = shapedType.getRank();
+  return minorDim == rank - 1;
+}
+
+FailureOr<linalg::GenericOp>
+makeMinorDimensionsInnerMost(RewriterBase &rewriter,
+                             linalg::GenericOp genericOp, unsigned minorDimM,
+                             unsigned minorDimN, unsigned minorDimK) {
+  assert(genericOp.getNumDpsInputs() == 2 && genericOp.getNumDpsInits() == 1);
+  OpOperand *operandA = genericOp.getDpsInputOperands()[0];
+  OpOperand *operandB = genericOp.getDpsInputOperands()[1];
+  OpOperand *operandC = genericOp.getDpsInitOperands()[0];
+
+  // C(m,n) += A(m,k) * B(k,n)
+  // n is expected to be the innermost for C
+  // k is expected to be the innermost for A
+  // n is expected to be the innermost for B
+  auto minorKInCodomainOpA = getPosInCodomain(minorDimK, operandA, genericOp);
+  auto minorMInCodomainOpA = getPosInCodomain(minorDimM, operandA, genericOp);
+  if (!minorKInCodomainOpA || !minorMInCodomainOpA) {
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << "[makeMinorDimensionsInnerMost] did not find minor dims for A\n");
+    return failure();
+  }
+
+  auto minorNInCodomainOpB = getPosInCodomain(minorDimN, operandB, genericOp);
+  auto minorKInCodomainOpB = getPosInCodomain(minorDimK, operandB, genericOp);
+  if (!minorNInCodomainOpB || !minorKInCodomainOpB) {
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << "[makeMinorDimensionsInnerMost] did not find minor dims for B\n");
+    return failure();
+  }
+
+  auto minorNInCodomainOpC = getPosInCodomain(minorDimN, operandC, genericOp);
+  auto minorMInCodomainOpC = getPosInCodomain(minorDimM, operandC, genericOp);
+  if (!minorNInCodomainOpC || !minorMInCodomainOpC) {
+    LLVM_DEBUG(
+        llvm::dbgs()
+        << "[makeMinorDimensionsInnerMost] did not find minor dims for C\n");
+    return failure();
+  }
+
+  if (!isInnerMostDim(operandC, *minorNInCodomainOpC)) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "[makeMinorDimensionsInnerMost] emit transpose for C\n");
+    assert(isInnerMostDim(operandC, *minorMInCodomainOpC));
+    if (isInnerMostDim(operandA, *minorKInCodomainOpA)) {
+      emitTransposeOnOperand(rewriter, genericOp, operandA,
+                             *minorKInCodomainOpA, *minorMInCodomainOpA);
+    }
+    if (isInnerMostDim(operandB, *minorNInCodomainOpB)) {
+      emitTransposeOnOperand(rewriter, genericOp, operandB,
+                             *minorNInCodomainOpB, *minorKInCodomainOpB);
+    }
+    // Avoid transpose on the output by swapping A and B.
+    OpOperand *operandA = genericOp.getDpsInputOperands()[0];
+    OpOperand *operandB = genericOp.getDpsInputOperands()[1];
+    SmallVector<AffineMap> indexingMaps = genericOp.getIndexingMapsArray();
+    std::swap(indexingMaps[0], indexingMaps[1]);
+    rewriter.updateRootInPlace(genericOp, [&]() {
+      Value operandATmp = operandA->get();
+      genericOp->setOperand(operandA->getOperandNumber(), operandB->get());
+      genericOp->setOperand(operandB->getOperandNumber(), operandATmp);
+      genericOp.setIndexingMapsAttr(
+          ArrayAttr::get(genericOp.getContext(),
+                         llvm::to_vector(llvm::map_range(
+                             indexingMaps, [](AffineMap map) -> Attribute {
+                               return AffineMapAttr::get(map);
+                             }))));
+    });
+    return genericOp;
+  }
+
+  if (!isInnerMostDim(operandA, *minorKInCodomainOpA)) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "[makeMinorDimensionsInnerMost] emit transpose for A\n");
+    assert(isInnerMostDim(operandA, *minorMInCodomainOpA));
+    emitTransposeOnOperand(rewriter, genericOp, operandA, *minorKInCodomainOpA,
+                           *minorMInCodomainOpA);
+  }
+  if (!isInnerMostDim(operandB, *minorNInCodomainOpB)) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "[makeMinorDimensionsInnerMost] emit transpose for B\n");
+    assert(isInnerMostDim(operandB, *minorKInCodomainOpB));
+    emitTransposeOnOperand(rewriter, genericOp, operandB, *minorKInCodomainOpB,
+                           *minorNInCodomainOpB);
+  }
+  return genericOp;
 }
 
 namespace {

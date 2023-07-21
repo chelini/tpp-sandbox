@@ -39,9 +39,11 @@ struct BrgemmInfo {
   unsigned k;
   unsigned batch;
 
-  SmallVector<int64_t> stridesOnA;
-  SmallVector<int64_t> stridesOnB;
-  SmallVector<int64_t> stridesOnC;
+  int64_t lda;
+  int64_t ldb;
+  int64_t ldc;
+  int64_t strideA;
+  int64_t strideB;
 };
 } // namespace
 
@@ -75,13 +77,16 @@ static FailureOr<SmallVector<int64_t>> verifyStrides(OpOperand *operand) {
 // -- the stride of the minor dimension for A, k is 1.
 // -- the stride of the minor dimension for B, j is 1.
 // -- the stride of the minor dimension for C, j is 1.
-static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::GenericOp genericOp) {
-  auto contractionDims = linalgx::utils::isContraction(genericOp);
+static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::LinalgOp linalgOp) {
+  if (!linalgOp.hasBufferSemantics())
+    return failure();
+
+  auto contractionDims = linalgx::utils::isContraction(linalgOp);
   if (failed(contractionDims))
     return failure();
-  OpOperand *operandA = genericOp.getDpsInputOperands()[0];
-  OpOperand *operandB = genericOp.getDpsInputOperands()[1];
-  OpOperand *operandC = genericOp.getDpsInitOperands()[0];
+  OpOperand *operandA = linalgOp.getDpsInputOperands()[0];
+  OpOperand *operandB = linalgOp.getDpsInputOperands()[1];
+  OpOperand *operandC = linalgOp.getDpsInitOperands()[0];
 
   if (!llvm::all_of(SmallVector<OpOperand *>{operandA, operandB, operandC},
                     [](OpOperand *operand) {
@@ -102,7 +107,7 @@ static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::GenericOp genericOp) {
   unsigned classifiedLoops =
       contractionDims->m.size() + contractionDims->n.size() +
       contractionDims->k.size() + contractionDims->batch.size();
-  if (genericOp.getNumLoops() != classifiedLoops)
+  if (linalgOp.getNumLoops() != classifiedLoops)
     return failure();
 
   unsigned m = contractionDims->m[0];
@@ -119,38 +124,104 @@ static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::GenericOp genericOp) {
   LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] k: " << k << "\n");
   LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] batch: " << batch << "\n");
 
-  // A(i, k)
-  auto posKInCodomain =
-      linalgx::utils::getPosInCodomain(k, operandA, genericOp);
-  if (!posKInCodomain)
+  // A(m, k)
+  auto posKInCodomain = linalgx::utils::getPosInCodomain(k, operandA, linalgOp);
+  auto posMInCodomain = linalgx::utils::getPosInCodomain(m, operandA, linalgOp);
+  if (!posKInCodomain || !posMInCodomain)
     return failure();
   auto stridesOnA = verifyStrides(operandA);
   if (failed(stridesOnA) || (*stridesOnA)[*posKInCodomain] != 1)
     return failure();
+  int64_t lda = (*stridesOnA)[*posMInCodomain];
   LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] Strides on A: OK\n");
 
-  // B(k, j)
-  auto posNInCodomain =
-      linalgx::utils::getPosInCodomain(n, operandB, genericOp);
-  if (!posNInCodomain)
+  // B(k, n)
+  auto posNInCodomain = linalgx::utils::getPosInCodomain(n, operandB, linalgOp);
+  posKInCodomain = linalgx::utils::getPosInCodomain(k, operandB, linalgOp);
+  if (!posNInCodomain || !posKInCodomain)
     return failure();
   auto stridesOnB = verifyStrides(operandB);
   if (failed(stridesOnB) || (*stridesOnB)[*posNInCodomain] != 1)
     return failure();
+  int64_t ldb = (*stridesOnB)[*posKInCodomain];
   LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] Strides on B: OK\n");
 
-  // C(i, j)
-  posNInCodomain = linalgx::utils::getPosInCodomain(n, operandC, genericOp);
-  if (!posNInCodomain)
+  // C(m, n)
+  posNInCodomain = linalgx::utils::getPosInCodomain(n, operandC, linalgOp);
+  posMInCodomain = linalgx::utils::getPosInCodomain(m, operandC, linalgOp);
+  if (!posNInCodomain || !posMInCodomain)
     return failure();
-  auto stridesOnC = verifyStrides(genericOp.getDpsInitOperands()[0]);
+  auto stridesOnC = verifyStrides(linalgOp.getDpsInitOperands()[0]);
   if (failed(stridesOnC) || (*stridesOnC)[*posNInCodomain] != 1)
     return failure();
   LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] Strides on C: OK\n");
+  int ldc = (*stridesOnC)[*posMInCodomain];
 
-  BrgemmInfo info{m, n, k, batch, *stridesOnA, *stridesOnB, *stridesOnC};
+  auto batchPosCodomainA =
+      linalgx::utils::getPosInCodomain(batch, operandA, linalgOp);
+  auto batchPosCodomainB =
+      linalgx::utils::getPosInCodomain(batch, operandB, linalgOp);
+  int64_t strideA = 1;
+  if (batchPosCodomainA)
+    strideA = (*stridesOnA)[*batchPosCodomainA];
+  int64_t strideB = 1;
+  if (batchPosCodomainB)
+    strideB = (*stridesOnB)[*batchPosCodomainB];
+
+  BrgemmInfo info{m, n, k, batch, lda, ldb, ldc, strideA, strideB};
   return info;
 }
+
+static void replaceOpWithBrgemm(RewriterBase &rewriter,
+                                linalg::LinalgOp linalgOp,
+                                BrgemmInfo brgemmInfo) {
+  OpBuilder::InsertionGuard guard(rewriter);
+  auto loops = linalgOp.computeStaticLoopSizes();
+  unsigned m = brgemmInfo.m;
+  unsigned n = brgemmInfo.n;
+  unsigned k = brgemmInfo.k;
+  unsigned batch = brgemmInfo.batch;
+  int64_t lda = brgemmInfo.lda;
+  int64_t ldb = brgemmInfo.ldb;
+  int64_t ldc = brgemmInfo.ldc;
+  int64_t strideA = brgemmInfo.strideA;
+  int64_t strideB = brgemmInfo.strideB;
+
+  DenseI64ArrayAttr dims = DenseI64ArrayAttr::get(
+      rewriter.getContext(),
+      ArrayRef<int64_t>{loops[m], loops[n], loops[k], lda, ldb, ldc, strideA,
+                        strideB});
+  // TODO: (lorenzo) support other element types.
+  auto dtype =
+      xsmm::DataTypeAttr::get(rewriter.getContext(), xsmm::DataType::F32);
+  IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
+  Location loc = linalgOp.getLoc();
+  auto flags = rewriter.getArrayAttr(
+      xsmm::GemmFlagsAttr::get(rewriter.getContext(), xsmm::GemmFlags::NONE));
+  Value dispatched = rewriter.create<xsmm::BrgemmDispatchOp>(
+      loc, integer64, dims, flags, dtype);
+
+  unsigned batchVal = 1;
+  if (batch != std::numeric_limits<unsigned>::max())
+    batchVal = loops[batch];
+  Value batchDim = rewriter.create<arith::ConstantOp>(
+      loc, integer64, rewriter.getIntegerAttr(integer64, batchVal));
+  SmallVector<Value> invokeOperands;
+  invokeOperands.push_back(dispatched);
+  invokeOperands.append(linalgOp->getOperands().begin(),
+                        linalgOp->getOperands().end());
+  invokeOperands.push_back(batchDim);
+  rewriter.replaceOpWithNewOp<xsmm::BrgemmOp>(linalgOp, dtype, invokeOperands);
+}
+
+struct ConvertMatmulToMatmul : public OpRewritePattern<linalg::MatmulOp> {
+  using OpRewritePattern<linalg::MatmulOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::MatmulOp matmulOp,
+                                PatternRewriter &rewriter) const override {
+    return failure();
+  }
+};
 
 // Check if we can map `genericOp` to a BRGEMM and rewrite it to XSMM.
 struct ConvertGenericToBrgemm : public OpRewritePattern<linalg::GenericOp> {
@@ -158,70 +229,10 @@ struct ConvertGenericToBrgemm : public OpRewritePattern<linalg::GenericOp> {
 
   LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
-    if (!genericOp.hasBufferSemantics())
-      return failure();
     auto brgemmInfo = isMappableToBrgemm(genericOp);
     if (failed(brgemmInfo))
       return failure();
-
-    auto loops = cast<linalg::LinalgOp>(genericOp.getOperation())
-                     .computeStaticLoopSizes();
-    auto operandA = genericOp.getDpsInputOperands()[0];
-    auto operandB = genericOp.getDpsInputOperands()[1];
-    auto operandC = genericOp.getDpsInitOperands()[0];
-
-    unsigned m = brgemmInfo->m;
-    unsigned n = brgemmInfo->n;
-    unsigned k = brgemmInfo->k;
-    unsigned batch = brgemmInfo->batch;
-    auto mPosCodomainA =
-        linalgx::utils::getPosInCodomain(m, operandA, genericOp);
-    auto kPosCodomainB =
-        linalgx::utils::getPosInCodomain(k, operandB, genericOp);
-    auto mPosCodomainC =
-        linalgx::utils::getPosInCodomain(m, operandC, genericOp);
-    auto batchPosCodomainA =
-        linalgx::utils::getPosInCodomain(batch, operandA, genericOp);
-    auto batchPosCodomainB =
-        linalgx::utils::getPosInCodomain(batch, operandB, genericOp);
-    if (!mPosCodomainA || !kPosCodomainB || !mPosCodomainC) {
-      return failure();
-    }
-    int64_t lda = brgemmInfo->stridesOnA[*mPosCodomainA];
-    int64_t ldb = brgemmInfo->stridesOnB[*kPosCodomainB];
-    int64_t ldc = brgemmInfo->stridesOnC[*mPosCodomainC];
-    int64_t strideA = 1;
-    if (batchPosCodomainA)
-      strideA = brgemmInfo->stridesOnA[*batchPosCodomainA];
-    int64_t strideB = 1;
-    if (batchPosCodomainB)
-      strideB = brgemmInfo->stridesOnB[*batchPosCodomainB];
-
-    DenseI64ArrayAttr dims = DenseI64ArrayAttr::get(
-        rewriter.getContext(),
-        ArrayRef<int64_t>{loops[m], loops[n], loops[k], lda, ldb, ldc, strideA,
-                          strideB});
-    auto dtype =
-        xsmm::DataTypeAttr::get(rewriter.getContext(), xsmm::DataType::F32);
-    IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
-    Location loc = genericOp.getLoc();
-    auto flags = rewriter.getArrayAttr(
-        xsmm::GemmFlagsAttr::get(rewriter.getContext(), xsmm::GemmFlags::NONE));
-    Value dispatched = rewriter.create<xsmm::BrgemmDispatchOp>(
-        loc, integer64, dims, flags, dtype);
-
-    unsigned batchVal = 1;
-    if (batch != std::numeric_limits<unsigned>::max())
-      batchVal = loops[batch];
-    Value batchDim = rewriter.create<arith::ConstantOp>(
-        loc, integer64, rewriter.getIntegerAttr(integer64, batchVal));
-    SmallVector<Value> invokeOperands;
-    invokeOperands.push_back(dispatched);
-    invokeOperands.append(genericOp->getOperands().begin(),
-                          genericOp->getOperands().end());
-    invokeOperands.push_back(batchDim);
-    rewriter.replaceOpWithNewOp<xsmm::BrgemmOp>(genericOp, dtype,
-                                                invokeOperands);
+    replaceOpWithBrgemm(rewriter, genericOp, *brgemmInfo);
     return success();
   }
 };
@@ -279,6 +290,7 @@ void ConvertLinalgToXsmm::runOnOperation() {
     unsigned minorDimM = contractionDims->m.back();
     unsigned minorDimN = contractionDims->n.back();
     unsigned minorDimK = contractionDims->k.back();
+    unsigned constexpr strideOne = 1;
     auto minorKInCodomainOpA =
         linalgx::utils::getPosInCodomain(minorDimK, operandA, genericOp);
     auto minorMInCodomainOpA =
@@ -287,8 +299,8 @@ void ConvertLinalgToXsmm::runOnOperation() {
       LLVM_DEBUG(llvm::dbgs() << "[Walk] did not find minor dims for A\n");
       return WalkResult::skip();
     }
-    if ((*stridesOnA)[*minorKInCodomainOpA] != 1 &&
-        (*stridesOnA)[*minorMInCodomainOpA] != 1) {
+    if ((*stridesOnA)[*minorKInCodomainOpA] != strideOne &&
+        (*stridesOnA)[*minorMInCodomainOpA] != strideOne) {
       LLVM_DEBUG(llvm::dbgs()
                  << "[Walk] minor dims for A are not fastest-varying\n");
       return WalkResult::skip();
@@ -302,8 +314,8 @@ void ConvertLinalgToXsmm::runOnOperation() {
       LLVM_DEBUG(llvm::dbgs() << "[Walk] did not find minor dims for B\n");
       return WalkResult::skip();
     }
-    if ((*stridesOnB)[*minorNInCodomainOpB] != 1 &&
-        (*stridesOnB)[*minorKInCodomainOpB] != 1) {
+    if ((*stridesOnB)[*minorNInCodomainOpB] != strideOne &&
+        (*stridesOnB)[*minorKInCodomainOpB] != strideOne) {
       LLVM_DEBUG(llvm::dbgs()
                  << "[Walk] minor dims for B are not fastest-varying\n");
       return WalkResult::skip();
@@ -317,8 +329,8 @@ void ConvertLinalgToXsmm::runOnOperation() {
       LLVM_DEBUG(llvm::dbgs() << "[Walk] did not find minor dims for C\n");
       return WalkResult::skip();
     }
-    if ((*stridesOnC)[*minorNInCodomainOpC] != 1 &&
-        (*stridesOnC)[*minorMInCodomainOpC] != 1) {
+    if ((*stridesOnC)[*minorNInCodomainOpC] != strideOne &&
+        (*stridesOnC)[*minorMInCodomainOpC] != strideOne) {
       LLVM_DEBUG(llvm::dbgs()
                  << "[Walk] minor dims for C are not fastest-varying\n");
       return WalkResult::skip();
@@ -393,7 +405,8 @@ void ConvertLinalgToXsmm::runOnOperation() {
 } // namespace
 
 void mlir::tpp::populateLinalgToXsmmPatterns(RewritePatternSet &patterns) {
-  patterns.add<ConvertGenericToBrgemm>(patterns.getContext());
+  patterns.add<ConvertGenericToBrgemm, ConvertMatmulToMatmul>(
+      patterns.getContext());
 }
 
 std::unique_ptr<OperationPass<func::FuncOp>>

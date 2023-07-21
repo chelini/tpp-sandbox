@@ -89,10 +89,10 @@ bool hasMulAddBody(linalg::LinalgOp linalgOp,
 
 // Return the position of `dim` in the codomain of `operand`.
 std::optional<unsigned> getPosInCodomain(unsigned dim, OpOperand *operand,
-                                         linalg::GenericOp genericOp);
+                                         linalg::LinalgOp linalgOp);
 
 // Emit a transpose operation for `operand` by swapping `dim` with `newDim`.
-void emitTransposeOnOperand(RewriterBase &rewriter, linalg::GenericOp genericOp,
+void emitTransposeOnOperand(RewriterBase &rewriter, linalg::GenericOp linalgOp,
                             OpOperand *operand, unsigned dim, unsigned newDim);
 
 // Move the minor dimension as innermost.
@@ -101,9 +101,9 @@ void emitTransposeOnOperand(RewriterBase &rewriter, linalg::GenericOp genericOp,
 // Move n innermost for C and B.
 // Move k innermost for A.
 FailureOr<linalg::GenericOp>
-makeMinorDimensionsInnerMost(RewriterBase &rewriter,
-                             linalg::GenericOp genericOp, unsigned minorDimM,
-                             unsigned minorDimN, unsigned minorDimK);
+makeMinorDimensionsInnerMost(RewriterBase &rewriter, linalg::GenericOp linalgOp,
+                             unsigned minorDimM, unsigned minorDimN,
+                             unsigned minorDimK);
 
 // Rewrite scf.for to scf.forall. Assumes the loop to be parallel and
 // marked with `kLoopId`.

@@ -381,7 +381,10 @@ void ConvertLinalgToXsmm::runOnOperation() {
 
   RewritePatternSet patterns(ctx);
   tpp::populateLinalgToXsmmPatterns(patterns);
-  linalg::populateFoldUnitExtentDimsViaSlicesPatterns(patterns);
+  linalg::ControlDropUnitDims options;
+  options.rankReductionStrategy =
+      linalg::ControlDropUnitDims::RankReductionStrategy::ExtractInsertSlice;
+  linalg::populateFoldUnitExtentDimsPatterns(patterns, options);
   if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
     return signalPassFailure();
   }

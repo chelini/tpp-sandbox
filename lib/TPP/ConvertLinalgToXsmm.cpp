@@ -219,7 +219,11 @@ struct ConvertMatmulToMatmul : public OpRewritePattern<linalg::MatmulOp> {
 
   LogicalResult matchAndRewrite(linalg::MatmulOp matmulOp,
                                 PatternRewriter &rewriter) const override {
-    return failure();
+    auto gemmInfo = isMappableToBrgemm(matmulOp);
+    if (failed(gemmInfo))
+      return failure();
+    replaceOpWithBrgemm(rewriter, matmulOp, *gemmInfo);
+    return success();
   }
 };
 

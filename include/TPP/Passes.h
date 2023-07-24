@@ -155,6 +155,7 @@ std::unique_ptr<OperationPass<gpu::GPUModuleOp>>
 createSetSPIRVAbiAttributePass(StringRef api = "vulkan");
 std::unique_ptr<OperationPass<ModuleOp>>
 createGpuVulkanAbiPass(bool use64bitIndex = false);
+std::unique_ptr<OperationPass<func::FuncOp>> createDecomposeAggregatedOpsPass();
 
 // Testing passes.
 void registerTestStructuralMatchers();

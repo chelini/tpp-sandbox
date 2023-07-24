@@ -26,6 +26,7 @@ add_mlir_library(MLIRTPP
     DefaultPipeline.cpp
     ConvertLinalgToXsmm.cpp
     CanonicalizeContractions.cpp
+    DecomposeAggregatedOps.cpp
 
   # Utils
     TensorInit.cpp

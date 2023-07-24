@@ -245,21 +245,28 @@ struct ConvertGenericToBrgemm : public OpRewritePattern<linalg::GenericOp> {
 // for a BRGEMM operation.
 static FailureOr<linalg::ContractionDimensions>
 isBrgemmLike(linalg::GenericOp genericOp) {
-  if (!genericOp.hasBufferSemantics())
+  if (!genericOp.hasBufferSemantics()) {
+    LLVM_DEBUG(llvm::dbgs() << "[isBrgemmLike] not bufferized!\n");
     return failure();
+  }
 
   auto contractionDims = linalgx::utils::isContraction(genericOp);
-  if (failed(contractionDims))
+  if (failed(contractionDims)) {
+    LLVM_DEBUG(llvm::dbgs() << "[isBrgemmLike] not a contraction\n");
     return failure();
+  }
   if (contractionDims->m.size() < 1 || contractionDims->n.size() < 1 ||
       (contractionDims->k.size() != 2 && contractionDims->k.size() != 1)) {
+    LLVM_DEBUG(llvm::dbgs() << "[isBrgemmLike] not enough m, n and k dims\n");
     return failure();
   }
   unsigned classifiedLoops =
       contractionDims->m.size() + contractionDims->n.size() +
       contractionDims->k.size() + contractionDims->batch.size();
-  if (genericOp.getNumLoops() != classifiedLoops)
+  if (genericOp.getNumLoops() != classifiedLoops) {
+    LLVM_DEBUG(llvm::dbgs() << "[isBrgemmLike] not all loops classified\n");
     return failure();
+  }
   return contractionDims;
 }
 

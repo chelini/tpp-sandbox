@@ -453,6 +453,7 @@ def DefaultPipeline : Pass<"default-pipeline", "ModuleOp"> {
   ];
 }
 
+<<<<<<< HEAD
 def GPUToSPIRV : Pass<"gpu-to-spirv", "ModuleOp"> {
   let summary = "Convert GPU dialect to SPIR-V dialect";
   let description = [{
@@ -514,6 +515,14 @@ def GpuVulkanAbi : Pass<"gpu-vulkan-abi", "ModuleOp"> {
            "bool", /*default=*/"false",
            "Use 64-bit integers to convert index types">
   ];
+}
+
+def DecomposeAggregatedOps : Pass<"decompose-aggregated-ops", "func::FuncOp"> {
+  let summary = "Decompose aggregated operations.";
+  let description = [{
+    Decompose operations that implement the `AggregatedOpInterface`.
+  }];
+  let constructor = "mlir::tpp::createDecomposeAggregatedOpsPass()";
 }
 
 #endif // TPP_DIALECT_TPP_PASSES

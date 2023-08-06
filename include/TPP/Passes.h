@@ -159,6 +159,7 @@ std::unique_ptr<OperationPass<func::FuncOp>> createConvertLinalgToXsmmPass();
 std::unique_ptr<OperationPass<func::FuncOp>>
 createCanonicalizeContractionsPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createDecomposeAggregatedOpsPass();
+std::unique_ptr<OperationPass<func::FuncOp>> createFoldXsmmOpsPass();
 
 // Testing passes.
 void registerTestStructuralMatchers();

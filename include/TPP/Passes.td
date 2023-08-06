@@ -525,4 +525,15 @@ def DecomposeAggregatedOps : Pass<"decompose-aggregated-ops", "func::FuncOp"> {
   let constructor = "mlir::tpp::createDecomposeAggregatedOpsPass()";
 }
 
+def FoldXsmmOps : Pass<"fold-xsmm-ops", "func::FuncOp"> {
+  let summary = "Attempt to fold xsmm ops as flags.";
+  let description = [{
+    Some XSMM operation can be fold with the consumer. For example, we a
+    xsmm.unary zero can fold with the consumer xsmm.brgemm becoming a flag for
+    xsmm.brgemm.
+  }];
+  let constructor = "mlir::tpp::createFoldXsmmOpsPass()";
+  let dependentDialects = ["memref::MemRefDialect", "xsmm::XsmmDialect"];
+}
+
 #endif // TPP_DIALECT_TPP_PASSES

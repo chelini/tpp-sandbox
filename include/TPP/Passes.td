@@ -247,11 +247,14 @@ def DefaultTppPasses : Pass<"default-tpp-passes", "ModuleOp"> {
   }];
   let options= [
     Option<"tppToLoops", "tpp-to-loops",
-           "bool", /*default=*/"0",
+           "bool", /*default=*/"false",
            "By default TPP ops are lowered to XSMM. Lower TPP to loops instead.">,
     Option<"linalgToLoops", "linalg-to-loops",
-           "bool", /*default=*/"0",
+           "bool", /*default=*/"false",
            "Skip all TPP transformations. Lower linalg directly to loops.">,
+    Option<"linalgToXsmm", "linalg-to-xsmm",
+           "bool", /*default=*/"false",
+           "Skip all TPP transformations. Lower lianalg directly to xsmm.">
   ];
   let constructor = "mlir::tpp::createDefaultTppPass()";
 }

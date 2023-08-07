@@ -353,10 +353,11 @@ private:
 // The default pipeline for TPP.
 struct DefaultTppPasses : public DefaultTppPassesBase<DefaultTppPasses>,
                           UtilityPassBase<ModuleOp> {
-  DefaultTppPasses() : DefaultTppPasses(false, false){};
-  DefaultTppPasses(bool tppToLoops, bool linalgToLoops) {
+  DefaultTppPasses() : DefaultTppPasses(false, false, false){};
+  DefaultTppPasses(bool tppToLoops, bool linalgToLoops, bool linalgToXsmm) {
     this->tppToLoops = tppToLoops;
     this->linalgToLoops = linalgToLoops;
+    this->linalgToXsmm = linalgToXsmm;
   };
 
   void getDependentDialects(DialectRegistry &registry) const override {
@@ -406,6 +407,15 @@ private:
       pm.addPass(createBufferizePass());
       pm.addNestedPass<func::FuncOp>(createConvertLinalgToLoopsPass());
       pm.addNestedPass<func::FuncOp>(createCleanupPass());
+    } else if (linalgToXsmm) {
+
+      // tensor->memref.
+      pm.addPass(createBufferizePass());
+
+      // linalg to xsmm.
+      pm.addNestedPass<func::FuncOp>(createConvertLinalgToXsmmPass());
+      pm.addNestedPass<func::FuncOp>(createCleanupPass());
+
     } else {
       // Convert linalg.batch_matmul to linalg.matmul.
       pm.addPass(createRewriteBatchMatmulToMatmulPass());
@@ -479,6 +489,8 @@ mlir::tpp::createTppLoweringPass(bool loops) {
 }
 
 std::unique_ptr<OperationPass<ModuleOp>>
-mlir::tpp::createDefaultTppPass(bool tppLoops, bool linalgLoops) {
-  return std::make_unique<DefaultTppPasses>(tppLoops, linalgLoops);
+mlir::tpp::createDefaultTppPass(bool tppLoops, bool linalgLoops,
+                                bool linalgToXsmm) {
+  return std::make_unique<DefaultTppPasses>(tppLoops, linalgLoops,
+                                            linalgToXsmm);
 }

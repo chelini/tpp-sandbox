@@ -272,8 +272,7 @@ func.func @brgemm_8(%arg0: memref<64x32x8x64xf32>, %arg1: memref<64x32x8x64xf32>
     %subview_0 = memref.subview %arg1[%arg2, 0, %arg3, 0] [1, 32, 1, 64] [1, 1, 1, 1] : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
     %subview_1 = memref.subview %arg0[%arg2, 0, %arg3, 0] [1, 32, 1, 64] [1, 1, 1, 1] : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
     // CHECK: %{{.+}} = memref.alloc() : memref<64x32xf32>
-    // CHECK-NEXT: linalg.transpose ins(%{{.+}} : memref<32x64xf32, strided<[512, 1], offset: ?>>) 
-    // CHECK-SAME:  outs(%{{.+}} : memref<64x32xf32>) permutation = [1, 0] 
+    // CHECK: %{{.+}} = xsmm.unary.dispatch transpose [32, 64, 512, 32] flags = (none) data_type = f32
     // CHECK: %{{.+}} = xsmm.brgemm.dispatch [32, 32, 64, 512, 32, 32, 1, 1] flags = (none) data_type = f32
     // CHECK-NOT: linalg.generic
     linalg.generic {
@@ -326,7 +325,8 @@ func.func @brgemm_9(%arg0: memref<64x64x8x32xf32>, %arg1: memref<64x32x8x64xf32>
 // CHECK: scf.forall (%[[ARG2:.+]], %[[ARG3:.+]]) in (64, 8)
 // CHECK: %[[SUB:.+]] = memref.subview %[[ALLOC]][%[[ARG2]], %[[ARG3]], 0, 0] [1, 1, 32, 32] [1, 1, 1, 1] 
 // CHECK-SAME:  : memref<64x8x32x32xf32> to memref<32x32xf32, strided<[32, 1], offset: ?>>
-// CHECK: linalg.fill ins(%[[CST]] : f32) outs(%[[SUB]] : memref<32x32xf32, strided<[32, 1], offset: ?>>)
+// CHECK: %[[DIS_FILL:.+]] = xsmm.unary.dispatch zero [32, 32, 1, 32] flags = (bcast_scalar) data_type = f32
+// CHECK: xsmm.unary zero(data_type = f32, %[[DIS_FILL]], %[[CST]], %[[SUB]])
 // CHECK: %[[SUB_0:.+]] = memref.subview %[[ARG1]][%[[ARG2]], 0, %[[ARG3]], 0] [1, 32, 1, 64] [1, 1, 1, 1] 
 // CHECK-SAME:  : memref<64x32x8x64xf32> to memref<32x64xf32, strided<[512, 1], offset: ?>>
 // CHECK: %[[SUB_1:.+]] = memref.subview %[[ARG0]][%[[ARG2]], 0, %[[ARG3]], 0] [1, 64, 1, 32] [1, 1, 1, 1] 
@@ -410,11 +410,11 @@ func.func @gemm_3(%arg0: memref<64x32xf32>, %arg1: memref<32x64xf32>, %arg2: mem
 // CHECK-SAME: %[[ARG0:.+]]: memref<64x32xf32>, %[[ARG1:.+]]: memref<32x64xf32>, %[[ARG2:.+]]: memref<64x64xf32>
 // CHECK: %[[C1:.+]] = arith.constant 1 : i64
 // CHECK: %[[ALLOC:.+]] = memref.alloc() : memref<32x64xf32>
-// CHECK: linalg.transpose ins(%[[ARG0]] : memref<64x32xf32>) 
-// CHECK-SAME:  outs(%[[ALLOC]] : memref<32x64xf32>) permutation = [1, 0]
+// CHECK: %[[DIS_TRANS:.+]] = xsmm.unary.dispatch transpose [64, 32, 32, 64] flags = (none) data_type = f32
+// CHECK: xsmm.unary transpose(data_type = f32, %[[DIS_TRANS]], %[[ARG0]], %[[ALLOC]])
 // CHECK: %[[ALLOC_0:.+]] = memref.alloc() : memref<64x32xf32>
-// CHECK: linalg.transpose ins(%[[ARG1]] : memref<32x64xf32>) 
-// CHECK-SAME:  outs(%[[ALLOC_0]] : memref<64x32xf32>) permutation = [1, 0]
+// CHECK: %[[DIS_TRANS_1:.+]] = xsmm.unary.dispatch transpose [32, 64, 64, 32] flags = (none) data_type = f32
+// CHECK: xsmm.unary transpose(data_type = f32, %[[DIS_TRANS_1]], %[[ARG1]], %[[ALLOC_0]])
 // CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [64, 64, 32, 32, 64, 64, 1, 1] flags = (none) data_type = f32
 // CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ALLOC_0]], %[[ALLOC]], %[[ARG2]], %[[C1]])
 
@@ -442,8 +442,8 @@ func.func @gemm_4(%arg0: memref<64x32xf32>, %arg1: memref<64x32xf32>, %arg2: mem
 // CHECK-SAME: %[[ARG0:.+]]: memref<64x32xf32>, %[[ARG1:.+]]: memref<64x32xf32>, %[[ARG2:.+]]: memref<64x64xf32>
 // CHECK: %[[C1:.+]] = arith.constant 1 : i64
 // CHECK: %[[ALLOC:.+]] = memref.alloc() : memref<32x64xf32>
-// CHECK: linalg.transpose ins(%[[ARG0]] : memref<64x32xf32>) 
-// CHECK-SAME:  outs(%[[ALLOC]] : memref<32x64xf32>) permutation = [1, 0]
+// CHECK: %[[DIS_TRAN:.+]] = xsmm.unary.dispatch transpose [64, 32, 32, 64] flags = (none) data_type = f32
+// CHECK: xsmm.unary transpose(data_type = f32, %[[DIS_TRAN]], %[[ARG0]], %[[ALLOC]])
 // CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [64, 64, 32, 32, 64, 64, 1, 1] flags = (none) data_type = f32
 // CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ARG1]], %[[ALLOC]], %[[ARG2]], %[[C1]])
 

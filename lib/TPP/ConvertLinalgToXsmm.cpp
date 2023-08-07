@@ -545,8 +545,8 @@ void ConvertLinalgToXsmm::runOnOperation() {
 } // namespace
 
 void mlir::tpp::populateLinalgToXsmmPatterns(RewritePatternSet &patterns) {
-  patterns.add<ConvertGenericToBrgemm, ConvertMatmulToMatmul/*,
-               ConvertFillOpToUnaryZero, ConvertTransposeOpToUnaryTranspose*/>(
+  patterns.add<ConvertGenericToBrgemm, ConvertMatmulToMatmul,
+               ConvertFillOpToUnaryZero, ConvertTransposeOpToUnaryTranspose>(
       patterns.getContext());
 }
 

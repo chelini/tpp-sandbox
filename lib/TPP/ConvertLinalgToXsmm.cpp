@@ -8,6 +8,7 @@
 
 #include "TPP/Dialect/Tpp/TppUtils.h"
 #include "TPP/Dialect/Xsmm/XsmmOps.h"
+#include "TPP/Dialect/Xsmm/XsmmUtils.h"
 #include "TPP/Passes.h"
 #include "TPP/TransformUtils.h"
 #include "TPP/Transforms.h"
@@ -46,6 +47,14 @@ struct BrgemmInfo {
   int64_t strideA;
   int64_t strideB;
 };
+
+struct UnaryInfo {
+  unsigned m;
+  unsigned n;
+
+  int64_t ldi;
+  int64_t ldo;
+};
 } // namespace
 
 // Check if the strides associated with `operand` are valid strides
@@ -69,6 +78,26 @@ static FailureOr<SmallVector<int64_t>> verifyStrides(OpOperand *operand) {
   return strides;
 }
 
+// Return true if all the operand have the same type.
+static bool hasMixedTypes(linalg::LinalgOp linalgOp) {
+  // assert(linalgOp.getNumInitOperands > 0);
+  OpOperand *outputOperand = linalgOp.getDpsInitOperands().back();
+  auto elemType = getElementTypeOrSelf(outputOperand->get().getType());
+
+  if (!llvm::all_of(linalgOp.getDpsInitOperands(), [&](OpOperand *operand) {
+        auto currentOperandType =
+            getElementTypeOrSelf(operand->get().getType());
+        return currentOperandType == elemType;
+      })) {
+    return false;
+  }
+
+  return llvm::all_of(linalgOp.getDpsInputOperands(), [&](OpOperand *operand) {
+    auto currentOperandType = getElementTypeOrSelf(operand->get().getType());
+    return currentOperandType == elemType;
+  });
+}
+
 // Check if the given generic is mappable to a brgemm call.
 // - It is a contraction, with:
 // -- 1 m and n and 2 k dimensions.
@@ -79,7 +108,8 @@ static FailureOr<SmallVector<int64_t>> verifyStrides(OpOperand *operand) {
 // -- the stride of the minor dimension for B, j is 1.
 // -- the stride of the minor dimension for C, j is 1.
 static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::LinalgOp linalgOp) {
-  if (!linalgOp.hasBufferSemantics())
+  if (!linalgOp.hasBufferSemantics() || linalgOp.hasDynamicShape() ||
+      !hasMixedTypes(linalgOp))
     return failure();
 
   auto contractionDims = linalgx::utils::isContraction(linalgOp);
@@ -192,9 +222,8 @@ static void replaceOpWithBrgemm(RewriterBase &rewriter,
       rewriter.getContext(),
       ArrayRef<int64_t>{loops[m], loops[n], loops[k], lda, ldb, ldc, strideA,
                         strideB});
-  // TODO: (lorenzo) support other element types.
-  auto dtype =
-      xsmm::DataTypeAttr::get(rewriter.getContext(), xsmm::DataType::F32);
+  auto dtype = xsmm::utils::getXsmmDataType(
+      rewriter, linalgOp.getDpsInitOperands()[0]->get().getType());
   IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
   Location loc = linalgOp.getLoc();
   auto flags = rewriter.getArrayAttr(
@@ -215,6 +244,7 @@ static void replaceOpWithBrgemm(RewriterBase &rewriter,
   rewriter.replaceOpWithNewOp<xsmm::BrgemmOp>(linalgOp, dtype, invokeOperands);
 }
 
+// Convert a linalg.matmul to a XSMM brgemm op.
 struct ConvertMatmulToMatmul : public OpRewritePattern<linalg::MatmulOp> {
   using OpRewritePattern<linalg::MatmulOp>::OpRewritePattern;
 
@@ -228,7 +258,7 @@ struct ConvertMatmulToMatmul : public OpRewritePattern<linalg::MatmulOp> {
   }
 };
 
-// Check if we can map `genericOp` to a BRGEMM and rewrite it to XSMM.
+// Check if we can map `genericOp` to a BRGEMM and rewrite it to XSMM brgemm op.
 struct ConvertGenericToBrgemm : public OpRewritePattern<linalg::GenericOp> {
   using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
 
@@ -242,12 +272,33 @@ struct ConvertGenericToBrgemm : public OpRewritePattern<linalg::GenericOp> {
   }
 };
 
+static void replaceOpWithUnary(RewriterBase &rewriter,
+                               linalg::LinalgOp linalgOp, UnaryInfo unaryInfo,
+                               ArrayAttr flags, xsmm::UnaryKindAttr kind) {
+  Location loc = linalgOp.getLoc();
+  IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
+  DenseI64ArrayAttr dims = DenseI64ArrayAttr::get(
+      rewriter.getContext(), ArrayRef<int64_t>{unaryInfo.m, unaryInfo.n,
+                                               unaryInfo.ldi, unaryInfo.ldo});
+  auto dtype = xsmm::utils::getXsmmDataType(
+      rewriter, linalgOp.getDpsInitOperands()[0]->get().getType());
+  Value dispatched = rewriter.create<xsmm::UnaryDispatchOp>(
+      loc, integer64, kind, dims, flags, dtype);
+  SmallVector<Value> invokeOperands;
+  invokeOperands.push_back(dispatched);
+  invokeOperands.append(linalgOp->getOperands().begin(),
+                        linalgOp->getOperands().end());
+  rewriter.replaceOpWithNewOp<xsmm::UnaryOp>(linalgOp, dtype, kind,
+                                             invokeOperands);
+}
+
 struct ConvertFillOpToUnaryZero : public OpRewritePattern<linalg::FillOp> {
   using OpRewritePattern<linalg::FillOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(linalg::FillOp fillOp,
                                 PatternRewriter &rewriter) const override {
-    if (!fillOp.hasBufferSemantics() || fillOp.hasDynamicShape())
+    if (!fillOp.hasBufferSemantics() || fillOp.hasDynamicShape() ||
+        !hasMixedTypes(fillOp))
       return failure();
     auto input = fillOp.getDpsInputOperands()[0];
     if (!tpp::utils::isZeroTensor(input->get()))
@@ -263,31 +314,18 @@ struct ConvertFillOpToUnaryZero : public OpRewritePattern<linalg::FillOp> {
     if (failed(stridesOnOutput) || stridesOnOutput->back() != 1)
       return failure();
 
-    int64_t m = outputType.getShape()[0];
-    int64_t n = outputType.getShape()[1];
-    int64_t ldo = stridesOnOutput->front();
+    UnaryInfo unaryInfo;
+    unaryInfo.m = outputType.getShape()[0];
+    unaryInfo.n = outputType.getShape()[1];
+    unaryInfo.ldo = stridesOnOutput->front();
     // fillOp has a scalar input.
-    int64_t ldi = 1;
+    unaryInfo.ldi = 1;
 
-    Location loc = fillOp.getLoc();
-    IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
-    DenseI64ArrayAttr dims = DenseI64ArrayAttr::get(
-        rewriter.getContext(), ArrayRef<int64_t>{m, n, ldi, ldo});
-    // TODO: (lorenzo) support other element types.
-    auto dtype =
-        xsmm::DataTypeAttr::get(rewriter.getContext(), xsmm::DataType::F32);
     auto flags = rewriter.getArrayAttr(xsmm::UnaryFlagsAttr::get(
         rewriter.getContext(), xsmm::UnaryFlags::BCAST_SCALAR));
     xsmm::UnaryKindAttr kind =
         xsmm::UnaryKindAttr::get(rewriter.getContext(), xsmm::UnaryKind::ZERO);
-    Value dispatched = rewriter.create<xsmm::UnaryDispatchOp>(
-        loc, integer64, kind, dims, flags, dtype);
-    SmallVector<Value> invokeOperands;
-    invokeOperands.push_back(dispatched);
-    invokeOperands.append(fillOp->getOperands().begin(),
-                          fillOp->getOperands().end());
-    rewriter.replaceOpWithNewOp<xsmm::UnaryOp>(fillOp, dtype, kind,
-                                               invokeOperands);
+    replaceOpWithUnary(rewriter, fillOp, unaryInfo, flags, kind);
     return success();
   }
 };
@@ -298,7 +336,8 @@ struct ConvertTransposeOpToUnaryTranspose
 
   LogicalResult matchAndRewrite(linalg::TransposeOp transposeOp,
                                 PatternRewriter &rewriter) const override {
-    if (!transposeOp.hasBufferSemantics() || transposeOp.hasDynamicShape())
+    if (!transposeOp.hasBufferSemantics() || transposeOp.hasDynamicShape() ||
+        !hasMixedTypes(transposeOp))
       return failure();
     auto input = transposeOp.getDpsInputOperands()[0];
     auto output = transposeOp.getDpsInitOperands()[0];
@@ -316,30 +355,17 @@ struct ConvertTransposeOpToUnaryTranspose
     if (stridesOnInput->back() != 1 || stridesOnOutput->back() != 1)
       return failure();
 
-    int64_t m = inputType.getShape()[0];
-    int64_t n = inputType.getShape()[1];
-    int64_t ldi = stridesOnInput->front();
-    int64_t ldo = stridesOnOutput->front();
+    UnaryInfo unaryInfo;
+    unaryInfo.m = inputType.getShape()[0];
+    unaryInfo.n = inputType.getShape()[1];
+    unaryInfo.ldi = stridesOnInput->front();
+    unaryInfo.ldo = stridesOnOutput->front();
 
-    Location loc = transposeOp.getLoc();
-    IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
-    DenseI64ArrayAttr dims = DenseI64ArrayAttr::get(
-        rewriter.getContext(), ArrayRef<int64_t>{m, n, ldi, ldo});
-    // TODO: (lorenzo) support other element types.
-    auto dtype =
-        xsmm::DataTypeAttr::get(rewriter.getContext(), xsmm::DataType::F32);
     auto flags = rewriter.getArrayAttr(xsmm::UnaryFlagsAttr::get(
         rewriter.getContext(), xsmm::UnaryFlags::NONE));
     xsmm::UnaryKindAttr kind = xsmm::UnaryKindAttr::get(
         rewriter.getContext(), xsmm::UnaryKind::TRANSPOSE);
-    Value dispatched = rewriter.create<xsmm::UnaryDispatchOp>(
-        loc, integer64, kind, dims, flags, dtype);
-    SmallVector<Value> invokeOperands;
-    invokeOperands.push_back(dispatched);
-    invokeOperands.append(transposeOp->getOperands().begin(),
-                          transposeOp->getOperands().end());
-    rewriter.replaceOpWithNewOp<xsmm::UnaryOp>(transposeOp, dtype, kind,
-                                               invokeOperands);
+    replaceOpWithUnary(rewriter, transposeOp, unaryInfo, flags, kind);
     return success();
   }
 };

@@ -4,9 +4,6 @@
 // RUN: tpp-opt %s | \
 // RUN: tpp-run -e entry -entry-point-result=void | FileCheck %s
 
-// RUN: tpp-opt %s -bufferize -convert-linalg-to-xsmm | \
-// RUN: FileCheck %s -check-prefix=IR
-
 // RUN: tpp-opt %s -tile-consumer-and-fuse-producers -bufferize -convert-linalg-to-xsmm | \
 // RUN: FileCheck %s -check-prefix=FUSED_IR
 
@@ -34,8 +31,6 @@ func.func @matmul_static(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t) {
   // FUSED_IR: %{{.+}} = xsmm.unary.dispatch transpose [2, 4, 8, 2] flags = (none) data_type = f32
   // FUSED_IR: %{{.+}} = xsmm.brgemm.dispatch [8, 2, 4, 8, 2, 2, 1, 1] flags = (none) data_type = f32
   
-  // IR: linalg.transpose
-  // IR: %{{.+}} = xsmm.brgemm.dispatch [8, 2, 4, 8, 2, 2, 1, 1] flags = (none) data_type = f32
   %gemm = linalg.generic {
     indexing_maps = [#map, #map1, #map2], 
     iterator_types = ["parallel", "parallel", "parallel", "reduction", "parallel"]} 

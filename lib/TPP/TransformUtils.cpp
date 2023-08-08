@@ -502,8 +502,7 @@ static bool isInnerMostDim(OpOperand *operand, unsigned minorDim) {
 
 FailureOr<linalg::GenericOp>
 makeMinorDimensionsInnerMost(RewriterBase &rewriter, linalg::GenericOp linalgOp,
-                             unsigned minorDimM, unsigned minorDimN,
-                             unsigned minorDimK) {
+                             unsigned m, unsigned n, unsigned k) {
   assert(linalgOp.getNumDpsInputs() == 2 && linalgOp.getNumDpsInits() == 1);
   OpOperand *operandA = linalgOp.getDpsInputOperands()[0];
   OpOperand *operandB = linalgOp.getDpsInputOperands()[1];
@@ -513,8 +512,8 @@ makeMinorDimensionsInnerMost(RewriterBase &rewriter, linalg::GenericOp linalgOp,
   // n is expected to be the innermost for C
   // k is expected to be the innermost for A
   // n is expected to be the innermost for B
-  auto minorKInCodomainOpA = getPosInCodomain(minorDimK, operandA, linalgOp);
-  auto minorMInCodomainOpA = getPosInCodomain(minorDimM, operandA, linalgOp);
+  auto minorKInCodomainOpA = getPosInCodomain(k, operandA, linalgOp);
+  auto minorMInCodomainOpA = getPosInCodomain(m, operandA, linalgOp);
   if (!minorKInCodomainOpA || !minorMInCodomainOpA) {
     LLVM_DEBUG(
         llvm::dbgs()
@@ -522,8 +521,8 @@ makeMinorDimensionsInnerMost(RewriterBase &rewriter, linalg::GenericOp linalgOp,
     return failure();
   }
 
-  auto minorNInCodomainOpB = getPosInCodomain(minorDimN, operandB, linalgOp);
-  auto minorKInCodomainOpB = getPosInCodomain(minorDimK, operandB, linalgOp);
+  auto minorNInCodomainOpB = getPosInCodomain(n, operandB, linalgOp);
+  auto minorKInCodomainOpB = getPosInCodomain(k, operandB, linalgOp);
   if (!minorNInCodomainOpB || !minorKInCodomainOpB) {
     LLVM_DEBUG(
         llvm::dbgs()
@@ -531,8 +530,8 @@ makeMinorDimensionsInnerMost(RewriterBase &rewriter, linalg::GenericOp linalgOp,
     return failure();
   }
 
-  auto minorNInCodomainOpC = getPosInCodomain(minorDimN, operandC, linalgOp);
-  auto minorMInCodomainOpC = getPosInCodomain(minorDimM, operandC, linalgOp);
+  auto minorNInCodomainOpC = getPosInCodomain(n, operandC, linalgOp);
+  auto minorMInCodomainOpC = getPosInCodomain(m, operandC, linalgOp);
   if (!minorNInCodomainOpC || !minorMInCodomainOpC) {
     LLVM_DEBUG(
         llvm::dbgs()

@@ -4,9 +4,6 @@
 // RUN: tpp-opt %s | \
 // RUN: tpp-run -e entry -entry-point-result=void | FileCheck %s
 
-// RUN: tpp-opt %s -bufferize -convert-linalg-to-xsmm | \
-// RUN: FileCheck %s -check-prefix=IR
-
 // RUN: tpp-opt %s -tile-consumer-and-fuse-producers -bufferize -convert-linalg-to-xsmm | \
 // RUN: FileCheck %s -check-prefix=IR
 
@@ -31,6 +28,8 @@ func.func @matmul_static(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t) {
   %fill = linalg.fill ins(%cst_fill : f32) outs(%empty: tensor<2x2x2x8xf32>) -> tensor<2x2x2x8xf32>
 
   // IR: %[[C1:.+]] = arith.constant 1 : i64
+  // IR: xsmm.unary.dispatch zero [2, 8, 1, 8] flags = (bcast_scalar) data_type = f32
+  // IR: xsmm.unary zero(data_type = f32, %{{.+}}, %{{.+}}, %{{.+}})
   // IR: xsmm.brgemm.dispatch [2, 8, 4, 8, 16, 8, 1, 1] flags = (none) data_type = f32
   // IR: xsmm.brgemm(data_type = f32, %{{.+}}, %{{.+}}, %{{.+}}, %{{.+}}, %[[C1]]) 
   %gemm = linalg.generic {

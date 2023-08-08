@@ -98,23 +98,20 @@ static bool hasMixedTypes(linalg::LinalgOp linalgOp) {
   });
 }
 
-// Check if the given generic is mappable to a brgemm call.
-// - It is a contraction, with:
-// -- 1 m and n and 2 k dimensions.
-// -- m appears on the LHS and OUT but not in RHS.
-// -- n appears on the RHS and OUT but not in LHS.
-// -- k and k' appear on the RHS and LHS but not OUT.
-// -- the stride of the minor dimension for A, k is 1.
-// -- the stride of the minor dimension for B, j is 1.
-// -- the stride of the minor dimension for C, j is 1.
-static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::LinalgOp linalgOp) {
+// Structural matcher.
+static FailureOr<linalg::ContractionDimensions>
+checkStructure(linalg::LinalgOp linalgOp) {
   if (!linalgOp.hasBufferSemantics() || linalgOp.hasDynamicShape() ||
-      !hasMixedTypes(linalgOp))
+      !hasMixedTypes(linalgOp)) {
+    LLVM_DEBUG(llvm::dbgs() << "[checkStructure] Failed preconditions\n");
     return failure();
+  }
 
   auto contractionDims = linalgx::utils::isContraction(linalgOp);
-  if (failed(contractionDims))
+  if (failed(contractionDims)) {
+    LLVM_DEBUG(llvm::dbgs() << "[checkStructure] Not a contraction\n");
     return failure();
+  }
   OpOperand *operandA = linalgOp.getDpsInputOperands()[0];
   OpOperand *operandB = linalgOp.getDpsInputOperands()[1];
   OpOperand *operandC = linalgOp.getDpsInitOperands()[0];
@@ -127,33 +124,35 @@ static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::LinalgOp linalgOp) {
                       auto shapedType = cast<ShapedType>(typeOperand);
                       return shapedType.hasStaticShape();
                     })) {
+    LLVM_DEBUG(llvm::dbgs() << "[checkStructure] Wrong operands\n");
     return failure();
   }
 
   if (contractionDims->m.size() != 1 || contractionDims->n.size() != 1 ||
       (contractionDims->k.size() != 2 && contractionDims->k.size() != 1) ||
       contractionDims->batch.size() != 0) {
+    LLVM_DEBUG(llvm::dbgs() << "[checkStructure] Wrong dimensions\n");
     return failure();
   }
   unsigned classifiedLoops =
       contractionDims->m.size() + contractionDims->n.size() +
       contractionDims->k.size() + contractionDims->batch.size();
-  if (linalgOp.getNumLoops() != classifiedLoops)
+  if (linalgOp.getNumLoops() != classifiedLoops) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "[checkStructure] Not all loops are classified\n");
     return failure();
+  }
+  return contractionDims;
+}
 
-  unsigned m = contractionDims->m[0];
-  unsigned n = contractionDims->n[0];
-  unsigned k = contractionDims->k.back();
-  unsigned batch = (contractionDims->k.size() == 2)
-                       ? contractionDims->k.front()
-                       : std::numeric_limits<unsigned>::max();
-
-  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] Candidate dims: "
-                          << "\n");
-  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] m: " << m << "\n");
-  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] n: " << n << "\n");
-  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] k: " << k << "\n");
-  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] batch: " << batch << "\n");
+// Access matcher.
+static FailureOr<BrgemmInfo> checkAccess(linalg::LinalgOp linalgOp, unsigned m,
+                                         unsigned n, unsigned k,
+                                         unsigned batch) {
+  assert(linalgOp.getNumDpsInputs() == 2 && linalgOp.getNumDpsInits() == 1);
+  OpOperand *operandA = linalgOp.getDpsInputOperands()[0];
+  OpOperand *operandB = linalgOp.getDpsInputOperands()[1];
+  OpOperand *operandC = linalgOp.getDpsInitOperands()[0];
 
   // A(m, k)
   auto posKInCodomain = linalgx::utils::getPosInCodomain(k, operandA, linalgOp);
@@ -201,6 +200,40 @@ static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::LinalgOp linalgOp) {
 
   BrgemmInfo info{m, n, k, batch, lda, ldb, ldc, strideA, strideB};
   return info;
+}
+
+// Check if the given generic is mappable to a brgemm call.
+// - It is a contraction, with:
+// -- 1 m and n and 2 k dimensions.
+// -- m appears on the LHS and OUT but not in RHS.
+// -- n appears on the RHS and OUT but not in LHS.
+// -- k and k' appear on the RHS and LHS but not OUT.
+// -- the stride of the minor dimension for A, k is 1.
+// -- the stride of the minor dimension for B, j is 1.
+// -- the stride of the minor dimension for C, j is 1.
+static FailureOr<BrgemmInfo> isMappableToBrgemm(linalg::LinalgOp linalgOp) {
+  auto contractionDims = checkStructure(linalgOp);
+  if (failed(contractionDims)) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "[isMappableToBrgemm] Failed on checkStructure\n");
+    return failure();
+  }
+
+  unsigned m = contractionDims->m[0];
+  unsigned n = contractionDims->n[0];
+  unsigned k = contractionDims->k.back();
+  unsigned batch = (contractionDims->k.size() == 2)
+                       ? contractionDims->k.front()
+                       : std::numeric_limits<unsigned>::max();
+
+  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] Candidate dims: "
+                          << "\n");
+  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] m: " << m << "\n");
+  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] n: " << n << "\n");
+  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] k: " << k << "\n");
+  LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrgemm] batch: " << batch << "\n");
+
+  return checkAccess(linalgOp, m, n, k, batch);
 }
 
 static void replaceOpWithBrgemm(RewriterBase &rewriter,
@@ -292,6 +325,7 @@ static void replaceOpWithUnary(RewriterBase &rewriter,
                                              invokeOperands);
 }
 
+// Convert a linalg.fill to XSMM zero, if the fill fills with zeros.
 struct ConvertFillOpToUnaryZero : public OpRewritePattern<linalg::FillOp> {
   using OpRewritePattern<linalg::FillOp>::OpRewritePattern;
 
@@ -330,6 +364,7 @@ struct ConvertFillOpToUnaryZero : public OpRewritePattern<linalg::FillOp> {
   }
 };
 
+// Convert a linalg.transpose to a XSMM unary transpose.
 struct ConvertTransposeOpToUnaryTranspose
     : public OpRewritePattern<linalg::TransposeOp> {
   using OpRewritePattern<linalg::TransposeOp>::OpRewritePattern;
@@ -370,173 +405,40 @@ struct ConvertTransposeOpToUnaryTranspose
   }
 };
 
-// Return true if the `genericOp` has enough parallel and reductions dimension
-// for a BRGEMM operation.
-static FailureOr<linalg::ContractionDimensions>
-isBrgemmLike(linalg::GenericOp genericOp) {
-  if (!genericOp.hasBufferSemantics()) {
-    LLVM_DEBUG(llvm::dbgs() << "[isBrgemmLike] not bufferized!\n");
-    return failure();
-  }
-
-  auto contractionDims = linalgx::utils::isContraction(genericOp);
-  if (failed(contractionDims)) {
-    LLVM_DEBUG(llvm::dbgs() << "[isBrgemmLike] not a contraction\n");
-    return failure();
-  }
-  if (contractionDims->m.size() < 1 || contractionDims->n.size() < 1 ||
-      (contractionDims->k.size() != 2 && contractionDims->k.size() != 1)) {
-    LLVM_DEBUG(llvm::dbgs() << "[isBrgemmLike] not enough m, n and k dims\n");
-    return failure();
-  }
-  unsigned classifiedLoops =
-      contractionDims->m.size() + contractionDims->n.size() +
-      contractionDims->k.size() + contractionDims->batch.size();
-  if (genericOp.getNumLoops() != classifiedLoops) {
-    LLVM_DEBUG(llvm::dbgs() << "[isBrgemmLike] not all loops classified\n");
-    return failure();
-  }
-  return contractionDims;
-}
-
 void ConvertLinalgToXsmm::runOnOperation() {
   MLIRContext *ctx = &getContext();
   auto funcOp = getOperation();
   IRRewriter rewriter(&getContext());
 
+  // Enable conversion for linalg.generic to XSMM Brgemm if possible.
   auto res = funcOp->walk([&](linalg::GenericOp genericOp) {
-    // Step1. The operation should be a contraction.
-    auto contractionDims = isBrgemmLike(genericOp);
-    if (failed(contractionDims)) {
-      LLVM_DEBUG(llvm::dbgs() << "[Walk] not a contraction\n");
+    auto contractionDims = checkStructure(genericOp);
+    // If the generic does not match the structure of a Brgemm op, skip it.
+    if (failed(contractionDims))
       return WalkResult::skip();
-    }
-
-    // Step2. Verify the strides on each operands. Need to be
-    // statically known and at least one of the contraction
-    // dimensions must be the fastest-varying one.
-    OpOperand *operandA = genericOp.getDpsInputOperands()[0];
-    OpOperand *operandB = genericOp.getDpsInputOperands()[1];
-    OpOperand *operandC = genericOp.getDpsInitOperands()[0];
-    auto stridesOnA = verifyStrides(operandA);
-    auto stridesOnB = verifyStrides(operandB);
-    auto stridesOnC = verifyStrides(operandC);
-
-    if (failed(stridesOnA) || failed(stridesOnB) || failed(stridesOnC)) {
-      LLVM_DEBUG(llvm::dbgs() << "[Walk] no constant strides\n");
-      return WalkResult::skip();
-    }
-
-    unsigned minorDimM = contractionDims->m.back();
-    unsigned minorDimN = contractionDims->n.back();
-    unsigned minorDimK = contractionDims->k.back();
-    unsigned constexpr strideOne = 1;
-    auto minorKInCodomainOpA =
-        linalgx::utils::getPosInCodomain(minorDimK, operandA, genericOp);
-    auto minorMInCodomainOpA =
-        linalgx::utils::getPosInCodomain(minorDimM, operandA, genericOp);
-    if (!minorKInCodomainOpA || !minorMInCodomainOpA) {
-      LLVM_DEBUG(llvm::dbgs() << "[Walk] did not find minor dims for A\n");
-      return WalkResult::skip();
-    }
-    if ((*stridesOnA)[*minorKInCodomainOpA] != strideOne &&
-        (*stridesOnA)[*minorMInCodomainOpA] != strideOne) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "[Walk] minor dims for A are not fastest-varying\n");
-      return WalkResult::skip();
-    }
-
-    auto minorNInCodomainOpB =
-        linalgx::utils::getPosInCodomain(minorDimN, operandB, genericOp);
-    auto minorKInCodomainOpB =
-        linalgx::utils::getPosInCodomain(minorDimK, operandB, genericOp);
-    if (!minorNInCodomainOpB || !minorKInCodomainOpB) {
-      LLVM_DEBUG(llvm::dbgs() << "[Walk] did not find minor dims for B\n");
-      return WalkResult::skip();
-    }
-    if ((*stridesOnB)[*minorNInCodomainOpB] != strideOne &&
-        (*stridesOnB)[*minorKInCodomainOpB] != strideOne) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "[Walk] minor dims for B are not fastest-varying\n");
-      return WalkResult::skip();
-    }
-
-    auto minorNInCodomainOpC =
-        linalgx::utils::getPosInCodomain(minorDimN, operandC, genericOp);
-    auto minorMInCodomainOpC =
-        linalgx::utils::getPosInCodomain(minorDimM, operandC, genericOp);
-    if (!minorNInCodomainOpC || !minorMInCodomainOpC) {
-      LLVM_DEBUG(llvm::dbgs() << "[Walk] did not find minor dims for C\n");
-      return WalkResult::skip();
-    }
-    if ((*stridesOnC)[*minorNInCodomainOpC] != strideOne &&
-        (*stridesOnC)[*minorMInCodomainOpC] != strideOne) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "[Walk] minor dims for C are not fastest-varying\n");
-      return WalkResult::skip();
-    }
-
-    AffineMap outputMap = genericOp.getMatchingIndexingMap(operandC);
-    if (!outputMap.isProjectedPermutation()) {
-      LLVM_DEBUG(llvm::dbgs() << "[Walk] expect permutation for output map\n");
-      return WalkResult::skip();
-    }
-
-    // Step3. Tile all the parallel loops not involved in the contraction.
-    contractionDims->m.pop_back();
-    contractionDims->n.pop_back();
-    llvm::DenseSet<unsigned> otherParallelDims(contractionDims->m.begin(),
-                                               contractionDims->m.end());
-    otherParallelDims.insert(contractionDims->n.begin(),
-                             contractionDims->n.end());
-    otherParallelDims.insert(contractionDims->batch.begin(),
-                             contractionDims->batch.end());
-
-    SmallVector<OpFoldResult> tiles(
-        genericOp.getNumLoops(),
-        getAsIndexOpFoldResult(rewriter.getContext(), 0));
-    for (auto expr : outputMap.getResults()) {
-      auto dim = expr.cast<AffineDimExpr>().getPosition();
-      if (otherParallelDims.count(dim))
-        tiles[dim] = getAsIndexOpFoldResult(rewriter.getContext(), 1);
-    }
-
-    // Step4. Check if we need to tile. If we don't emit transpose to bring the
-    // GEMM in the canonical form: j fastest-varying for C and B and k
-    // fastest-varying for A.
-    if (llvm::all_of(tiles, [](OpFoldResult tile) {
-          return isConstantIntValue(tile, 0);
-        })) {
+    unsigned m = contractionDims->m[0];
+    unsigned n = contractionDims->n[0];
+    unsigned k = contractionDims->k.back();
+    unsigned batch = (contractionDims->k.size() == 2)
+                         ? contractionDims->k.front()
+                         : std::numeric_limits<unsigned>::max();
+    if (failed(checkAccess(genericOp, m, n, k, batch))) {
+      // The generic is a Brgemm but the strides of the selected dims (m, n, k)
+      // are not unit strides. Inject transposes to bring them innermost.
       if (failed(linalgx::utils::makeMinorDimensionsInnerMost(
-              rewriter, genericOp, minorDimM, minorDimN, minorDimK)))
+              rewriter, genericOp, m, n, k))) {
         return WalkResult::interrupt();
-      return WalkResult::advance();
+      }
     }
-
-    rewriter.setInsertionPoint(genericOp);
-    FailureOr<linalg::ForallTilingResult> tiledOp =
-        linalg::tileToForallOpUsingTileSizes(
-            rewriter, cast<TilingInterface>(genericOp.getOperation()), tiles,
-            /*mapping=*/std::nullopt);
-    // Step4b. Tile and emit transposes.
-    if ((failed(tiledOp)) ||
-        failed(linalgx::utils::makeMinorDimensionsInnerMost(
-            rewriter, cast<linalg::GenericOp>(tiledOp->tiledOp), minorDimM,
-            minorDimN, minorDimK))) {
-      return WalkResult::interrupt();
-    }
-    rewriter.replaceOp(genericOp, tiledOp->tileOp->getResults());
     return WalkResult::advance();
   });
-  if (res.wasInterrupted())
+  if (res.wasInterrupted()) {
+    LLVM_DEBUG(llvm::dbgs() << "passe failed!\n");
     return signalPassFailure();
+  }
 
   RewritePatternSet patterns(ctx);
   tpp::populateLinalgToXsmmPatterns(patterns);
-  linalg::ControlDropUnitDims options;
-  options.rankReductionStrategy =
-      linalg::ControlDropUnitDims::RankReductionStrategy::ExtractInsertSlice;
-  linalg::populateFoldUnitExtentDimsPatterns(patterns, options);
   if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
     return signalPassFailure();
   }

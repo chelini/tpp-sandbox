@@ -408,6 +408,9 @@ private:
       pm.addNestedPass<func::FuncOp>(createConvertLinalgToLoopsPass());
       pm.addNestedPass<func::FuncOp>(createCleanupPass());
     } else if (linalgToXsmm) {
+      // tile and fuse.
+      pm.addPass(createTileConsumerAndFuseProducersPass());
+      pm.addPass(createCleanupPass());
 
       // tensor->memref.
       pm.addPass(createBufferizePass());

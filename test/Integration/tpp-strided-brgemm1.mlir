@@ -4,9 +4,6 @@
 // RUN: tpp-opt %s | \
 // RUN: tpp-run -e entry -entry-point-result=void | FileCheck %s
 
-// RUN: tpp-opt %s -bufferize -convert-linalg-to-xsmm | \
-// RUN: FileCheck %s -check-prefix=IR
-
 // RUN: tpp-opt %s -tile-consumer-and-fuse-producers -bufferize -convert-linalg-to-xsmm | \
 // RUN: FileCheck %s -check-prefix=IR
 
@@ -30,7 +27,7 @@ func.func @matmul_static(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t, %
   %D_exp = tensor.expand_shape %D [[0, 1], [2, 3]] :
     !D_tensor_t into tensor<2x2x8x2xf32>
 
-  // IR: xsmm.brgemm.dispatch [2, 2, 4, 8, 16, 16, 4, 64] flags = (none) data_type = f32
+  // IR: xsmm.brgemm.dispatch [2, 2, 4, 8, 16, 2, 4, 64] flags = (none) data_type = f32
   // IR: xsmm.brgemm 
   %gemm = linalg.generic {
     indexing_maps = [#map, #map1, #map2], 
@@ -44,12 +41,12 @@ func.func @matmul_static(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t, %
   } -> tensor<2x2x8x2xf32>
 
   %bias = linalg.generic {
-    indexing_maps = [#map3, #map3, #map3],
+    indexing_maps = [#map3, #map3],
     iterator_types = ["parallel", "parallel", "parallel", "parallel"]}
-    ins(%gemm, %D_exp : tensor<2x2x8x2xf32>, tensor<2x2x8x2xf32>)
+    ins(%gemm : tensor<2x2x8x2xf32>)
     outs(%D_exp : tensor<2x2x8x2xf32>) {
-    ^bb0(%in: f32, %in_1: f32, %out: f32):
-      %4 = arith.addf %in, %in_1 : f32
+    ^bb0(%in: f32, %out: f32):
+      %4 = arith.addf %in, %out : f32
       linalg.yield %4 : f32
     } -> tensor<2x2x8x2xf32>
 

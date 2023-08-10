@@ -186,11 +186,23 @@ static void printBitVector(std::string banner,
   os << "\n";
 }
 
+static AffineMap getAffineMapForSoftmax(linalg::SoftmaxOp softmax) {
+  auto multiDimMap = AffineMap::getMultiDimIdentityMap(
+      softmax.getInputOperandType().getRank(), softmax.getContext());
+  SmallVector<AffineExpr> exprs = llvm::to_vector(multiDimMap.getResults());
+  exprs.erase(exprs.begin() + softmax.getDimension());
+  return AffineMap::get(softmax.getInputOperandType().getRank(),
+                        /*numSymbols=*/0, exprs, softmax.getContext());
+}
+
 static FailureOr<AffineMap> getProducerOutputMap(Operation *producer) {
   assert(producer->getNumResults() == 1);
   if (auto linalgProducer = dyn_cast_or_null<linalg::LinalgOp>(producer)) {
     return linalgProducer.getIndexingMapMatchingResult(
         linalgProducer.getTiedOpResult(linalgProducer.getDpsInitOperands()[0]));
+  }
+  if (auto softmax = dyn_cast_or_null<linalg::SoftmaxOp>(producer)) {
+    return getAffineMapForSoftmax(softmax);
   }
   return failure();
 }
@@ -199,6 +211,9 @@ static FailureOr<AffineMap> getConsumerOperandMap(Operation *consumer,
                                                   OpOperand &operand) {
   if (auto linalgConsumer = dyn_cast_or_null<linalg::LinalgOp>(consumer))
     return linalgConsumer.getMatchingIndexingMap(&operand);
+  if (auto softmax = dyn_cast_or_null<linalg::SoftmaxOp>(consumer)) {
+    return getAffineMapForSoftmax(softmax);
+  }
   return failure();
 }
 

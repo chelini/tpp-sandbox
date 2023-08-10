@@ -335,31 +335,6 @@ isContraction(linalg::LinalgOp linalgOp) {
   return dims;
 }
 
-FailureOr<linalg::ContractionDimensions>
-isContraction(linalg::LinalgOp linalgOp) {
-  using namespace mlir::tpp::structured_match;
-
-  // clang-format off
-  auto maybeContraction = 
-    StructuredOpMatcher::make<linalg::LinalgOp>()
-    .operation(NumDpsInits(EqualsTo(1)))
-    .operation(NumDpsInputs(EqualsTo(2)))
-    .operation(NumAffineMaps(EqualsTo(3)))
-    .region(MatchOne(0), 
-            WithOpChain<arith::MulFOp, 
-                        arith::AddFOp>(/*captures=*/nullptr));
-  // clang-format on
-  if (!maybeContraction.match(linalgOp))
-    return failure();
-
-  auto dims = linalg::inferContractionDims(linalgOp);
-  if (failed(dims) ||
-      (dims->m.size() < 1 || dims->n.size() < 1 || dims->k.size() < 1)) {
-    return failure();
-  }
-  return dims;
-}
-
 static std::optional<int64_t> getConstantRange(const Range &range) {
   std::optional<int64_t> stride = getConstantIntValue(range.stride);
   if (!stride || *stride != 1)

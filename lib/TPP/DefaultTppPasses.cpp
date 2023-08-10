@@ -298,8 +298,6 @@ private:
   void constructPipeline() override {
     pm.clear();
 
-    pm.addPass(createRewriteBatchMatmulToMatmulPass());
-
     // Convert all higher level dialects to TPP.
     pm.addPass(createConvertLinalgToTppPass());
     pm.addPass(createCombineTppPass());

@@ -54,13 +54,30 @@ func.func @matmul_static(
 
 transform.sequence failures(propagate) {
   ^bb0(%arg1: !transform.any_op):
-    %0 = transform.structured.match ops{["linalg.matmul"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    %1 = transform.structured.pack_ext %0 blocking_factors = [2, 2, 2] : !transform.any_op -> !transform.any_op 
-    %2 = get_parent_op %1 {isolated_from_above} : (!transform.any_op) -> !transform.any_op
+    %0 = transform.structured.match ops{["linalg.matmul"]} in %arg1 
+      : (!transform.any_op) -> !transform.any_op
+    %1 = transform.structured.pack_ext %0 blocking_factors = [2, 2, 2] 
+      : !transform.any_op -> !transform.any_op 
+
+    %3 = transform.structured.match ops{["linalg.generic"]} in %arg1 
+      : (!transform.any_op) -> !transform.any_op
+    %4 = transform.structured.get_blocked_matmuls %3
+      : (!transform.any_op) -> (!transform.op<"linalg.generic">)
+    %5, %loops:2 = transform.structured.tile_to_scf_for %4 [1, 1, 0, 0, 0, 0]
+      : (!transform.op<"linalg.generic">) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+
+    // TODO: move this in `transform.apply_patterns`.
+    %2 = get_parent_op %5 {isolated_from_above} : (!transform.any_op) -> !transform.any_op
     transform.structured.packing_propagation %2 : !transform.any_op
 
-    %3 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %3 : !transform.any_op
+    %f = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_reshapes
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_patterns.tensor.drop_redundant_insert_slice_rank_expansion
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
 func.func @entry() {

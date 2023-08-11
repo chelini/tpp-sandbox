@@ -7,14 +7,24 @@
 transform.sequence failures(propagate) {
   ^bb0(%arg1: !transform.any_op):
     %0 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %0 : !transform.any_op
+    %1, %loops:2 = transform.structured.tile_to_scf_for %0 [1, 1, 0, 0, 0, 0] 
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+
+    %f = transform.structured.match ops{["func.func"]} in %arg1 
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_patterns.tensor.drop_redundant_insert_slice_rank_expansion
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
-// CHECK-LABEL: func.func @blocked_matmul(
+// CHECK-LABEL: func.func @blocked_matmul_1(
 // CHECK-SAME: %[[ARG0:.+]]: tensor<4x16x32x32xf32>,
 // CHECK-SAME: %[[ARG1:.+]]: tensor<8x16x32x32xf32>,
 // CHECK-SAME: %[[ARG2:.+]]: tensor<4x8x32x32xf32>)
-func.func @blocked_matmul(%arg0: tensor<4x16x32x32xf32>, %arg1: tensor<8x16x32x32xf32>, %arg2: tensor<4x8x32x32xf32>) -> tensor<4x8x32x32xf32> {
+func.func @blocked_matmul_1(%arg0: tensor<4x16x32x32xf32>, %arg1: tensor<8x16x32x32xf32>, %arg2: tensor<4x8x32x32xf32>) -> tensor<4x8x32x32xf32> {
   // CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
   // CHECK-DAG: %[[C4:.+]] = arith.constant 4 : index
   // CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
@@ -49,25 +59,29 @@ func.func @blocked_matmul(%arg0: tensor<4x16x32x32xf32>, %arg1: tensor<8x16x32x3
 transform.sequence failures(propagate) {
   ^bb0(%arg1: !transform.any_op):
     %0 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %0 : !transform.any_op
+    %1:2 = transform.structured.tile_to_forall_op %0 tile_sizes [1, 1, 0, 0, 0, 0]
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
+
+    %f = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_reshapes
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_patterns.tensor.drop_redundant_insert_slice_rank_expansion
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
-// CHECK-LABEL: func.func @blocked_matmul(
-// CHECK-SAME:  %[[ARG0:.+]]: memref<4x16x32x32xf32>,
-// CHECK-SAME:  %[[ARG1:.+]]: memref<8x16x32x32xf32>,
-// CHECK-SAME:  %[[ARG2:.+]]: memref<4x8x32x32xf32>) -> memref<4x8x32x32xf32> {
-func.func @blocked_matmul(%arg0: memref<4x16x32x32xf32>, %arg1: memref<8x16x32x32xf32>, %arg2: memref<4x8x32x32xf32>) -> memref<4x8x32x32xf32> {
-  // CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
-  // CHECK-DAG: %[[C4:.+]] = arith.constant 4 : index
-  // CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
-  // CHECK-DAG: %[[C8:.+]] = arith.constant 8 : index
-  // CHECK: scf.parallel (%[[P1:.+]], %[[P2:.+]]) = (%[[C0]], %[[C0]]) to (%[[C4]], %[[C8]]) step (%[[C1]], %[[C1]]) {
-  // CHECK-NEXT: %[[SLICE1:.+]] = memref.subview %[[ARG0]][%[[P1]], 0, 0, 0] [1, 16, 32, 32] [1, 1, 1, 1] : memref<4x16x32x32xf32> to memref<16x32x32xf32, strided<[1024, 32, 1], offset: ?>>
-  // CHECK-NEXT: %[[SLICE2:.+]] = memref.subview %[[ARG1]][%[[P2]], 0, 0, 0] [1, 16, 32, 32] [1, 1, 1, 1] : memref<8x16x32x32xf32> to memref<16x32x32xf32, strided<[1024, 32, 1], offset: ?>>
-  // CHECK-NEXT: %[[SLICE3:.+]] = memref.subview %[[ARG2]][%[[P1]], %[[P2]], 0, 0] [1, 1, 32, 32] [1, 1, 1, 1] : memref<4x8x32x32xf32> to memref<32x32xf32, strided<[32, 1], offset: ?>>
-  // CHECK-NEXT: linalg.batch_reduce_matmul ins(%[[SLICE1]], %[[SLICE2]] : memref<16x32x32xf32, strided<[1024, 32, 1], offset: ?>>, memref<16x32x32xf32, strided<[1024, 32, 1], offset: ?>>) outs(%[[SLICE3]] : memref<32x32xf32, strided<[32, 1], offset: ?>>)
-  // CHECK: }
-  // CHECK-NEXT: return %[[ARG2]] : memref<4x8x32x32xf32>
+// C_HECK-LABEL: func.func @blocked_matmul_2(
+// C_HECK-SAME:  %[[ARG0:.+]]: memref<4x16x32x32xf32>,
+// C_HECK-SAME:  %[[ARG1:.+]]: memref<8x16x32x32xf32>,
+// C_HECK-SAME:  %[[ARG2:.+]]: memref<4x8x32x32xf32>) -> memref<4x8x32x32xf32> {
+func.func @blocked_matmul_2(%arg0: memref<4x16x32x32xf32>, %arg1: memref<8x16x32x32xf32>, %arg2: memref<4x8x32x32xf32>) -> memref<4x8x32x32xf32> {
+  // C_HECK: scf.forall (%[[P1:.+]], %[[P2:.+]]) in (4, 8) {
+  // C_HECK: %[[SLICE1:.+]] = memref.subview %[[ARG0]][%[[P1]], 0, 0, 0] [1, 16, 32, 32] [1, 1, 1, 1] : memref<4x16x32x32xf32> to memref<16x32x32xf32, strided<[1024, 32, 1], offset: ?>>
+  // C_HECK: %[[SLICE2:.+]] = memref.subview %[[ARG1]][%[[P2]], 0, 0, 0] [1, 16, 32, 32] [1, 1, 1, 1] : memref<8x16x32x32xf32> to memref<16x32x32xf32, strided<[1024, 32, 1], offset: ?>>
+  // C_HECK: %[[SLICE3:.+]] = memref.subview %[[ARG2]][%[[P1]], %[[P2]], 0, 0] [1, 1, 32, 32] [1, 1, 1, 1] : memref<4x8x32x32xf32> to memref<32x32xf32, strided<[32, 1], offset: ?>>
+  // C_HECK: linalg.batch_reduce_matmul ins(%[[SLICE1]], %[[SLICE2]] : memref<16x32x32xf32, strided<[1024, 32, 1], offset: ?>>, memref<16x32x32xf32, strided<[1024, 32, 1], offset: ?>>) outs(%[[SLICE3]] : memref<32x32xf32, strided<[32, 1], offset: ?>>)
   linalg.generic {indexing_maps = [#map3, #map4, #map5], iterator_types = ["parallel", "parallel", "reduction", "parallel", "parallel", "reduction"]} ins(%arg0, %arg1 : memref<4x16x32x32xf32>, memref<8x16x32x32xf32>) outs(%arg2 : memref<4x8x32x32xf32>) {
     ^bb0(%arg3: f32, %arg4: f32, %arg5: f32):
       %8 = arith.mulf %arg3, %arg4 : f32
@@ -85,13 +99,17 @@ func.func @blocked_matmul(%arg0: memref<4x16x32x32xf32>, %arg1: memref<8x16x32x3
 
 transform.sequence failures(propagate) {
   ^bb0(%arg1: !transform.any_op):
-    %0 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %0 : !transform.any_op
+    %f = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
-// CHECK-LABEL: func.func @blocked_matmul(
-// CHECK-SAME: %[[ARG0:.+]]: tensor<8x32x32xf32>, %[[ARG1:.+]]: tensor<8x32x32xf32>, %[[ARG2:.+]]: tensor<32x32xf32>) -> tensor<32x32xf32> {
-func.func @blocked_matmul(%arg0: tensor<8x32x32xf32>, %arg1: tensor<8x32x32xf32>, %arg2: tensor<32x32xf32>) -> tensor<32x32xf32> {
+// CHECK-LABEL: func.func @blocked_matmul_3(
+// CHECK-SAME:  %[[ARG0:.+]]: tensor<8x32x32xf32>, %[[ARG1:.+]]: tensor<8x32x32xf32>, 
+// CHECK-SAMEL  %[[ARG2:.+]]: tensor<32x32xf32>) -> tensor<32x32xf32> {
+func.func @blocked_matmul_3(%arg0: tensor<8x32x32xf32>, %arg1: tensor<8x32x32xf32>, %arg2: tensor<32x32xf32>) -> tensor<32x32xf32> {
   // CHECK: %[[MUL:.+]] = linalg.batch_reduce_matmul ins(%[[ARG0]], %[[ARG1]] : tensor<8x32x32xf32>, tensor<8x32x32xf32>) outs(%[[ARG2]] : tensor<32x32xf32>) -> tensor<32x32xf32>
   %0 = linalg.generic {indexing_maps = [#map5, #map6, #map7], iterator_types = ["reduction", "parallel", "parallel", "reduction"]} ins(%arg0, %arg1 : tensor<8x32x32xf32>, tensor<8x32x32xf32>) outs(%arg2 : tensor<32x32xf32>) {
   ^bb0(%arg3: f32, %arg4: f32, %arg5:f32):
@@ -112,14 +130,24 @@ func.func @blocked_matmul(%arg0: tensor<8x32x32xf32>, %arg1: tensor<8x32x32xf32>
 transform.sequence failures(propagate) {
   ^bb0(%arg1: !transform.any_op):
     %0 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %0 : !transform.any_op
+    %1, %loops:2 = transform.structured.tile_to_scf_for %0 [1, 1, 0, 0, 0, 0]
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+
+    %f = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_patterns.tensor.drop_redundant_insert_slice_rank_expansion
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
-// CHECK-LABEL: func.func @blocked_matmul(
+// CHECK-LABEL: func.func @blocked_matmul_4(
 // CHECK-SAME:  %[[ARG0:.+]]: tensor<4x8x32x32xf32>,
 // CHECK-SAME:  %[[ARG1:.+]]: tensor<16x8x32x32xf32>,
 // CHECK-SAME:  %[[ARG2:.+]]: tensor<32x32xf32>)
-func.func @blocked_matmul(%arg0: tensor<4x8x32x32xf32>, %arg1: tensor<16x8x32x32xf32>, %arg2: tensor<32x32xf32>) -> tensor<32x32xf32> {
+func.func @blocked_matmul_4(%arg0: tensor<4x8x32x32xf32>, %arg1: tensor<16x8x32x32xf32>, %arg2: tensor<32x32xf32>) -> tensor<32x32xf32> {
   // CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
   // CHECK-DAG: %[[C4:.+]] = arith.constant 4 : index
   // CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
@@ -151,14 +179,24 @@ func.func @blocked_matmul(%arg0: tensor<4x8x32x32xf32>, %arg1: tensor<16x8x32x32
 transform.sequence failures(propagate) {
   ^bb0(%arg1: !transform.any_op):
     %0 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %0 : !transform.any_op
+    %1, %loops:2 = transform.structured.tile_to_scf_for %0 [1, 1, 0, 0, 0, 0]
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+
+    %f = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_patterns.tensor.drop_redundant_insert_slice_rank_expansion
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
-// CHECK-LABEL: func.func @blocked_matmul(
+// CHECK-LABEL: func.func @blocked_matmul_5(
 // CHECK-SAME: %[[ARG0:.+]]: tensor<4x8x32x32xf32>,
 // CHECK-SAME: %[[ARG1:.+]]: tensor<16x8x32x32xf32>,
 // CHECK-SAME: %[[ARG2:.+]]: tensor<16x32x32xf32>)
-func.func @blocked_matmul(%arg0: tensor<4x8x32x32xf32>, %arg1: tensor<16x8x32x32xf32>, %arg2: tensor<16x32x32xf32>) -> tensor<16x32x32xf32> {
+func.func @blocked_matmul_5(%arg0: tensor<4x8x32x32xf32>, %arg1: tensor<16x8x32x32xf32>, %arg2: tensor<16x32x32xf32>) -> tensor<16x32x32xf32> {
   // CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
   // CHECK-DAG: %[[C4:.+]] = arith.constant 4 : index
   // CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
@@ -192,11 +230,14 @@ func.func @blocked_matmul(%arg0: tensor<4x8x32x32xf32>, %arg1: tensor<16x8x32x32
 
 transform.sequence failures(propagate) {
   ^bb0(%arg1: !transform.any_op):
-    %0 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %0 : !transform.any_op
+    %f = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
-func.func @blocked_matmul(%arg0: tensor<?x32x32xf32>, %arg1: tensor<?x32x32xf32>, %arg2: tensor<32x32xf32>) -> tensor<32x32xf32> {
+func.func @blocked_matmul_6(%arg0: tensor<?x32x32xf32>, %arg1: tensor<?x32x32xf32>, %arg2: tensor<32x32xf32>) -> tensor<32x32xf32> {
   %0 = linalg.generic {indexing_maps = [#map5, #map6, #map7], iterator_types = ["reduction", "parallel", "parallel", "reduction"]} ins(%arg0, %arg1 : tensor<?x32x32xf32>, tensor<?x32x32xf32>) outs(%arg2 : tensor<32x32xf32>) {
   ^bb0(%arg3: f32, %arg4: f32, %arg5:f32):
     %m = arith.mulf %arg3, %arg4 : f32
@@ -206,7 +247,7 @@ func.func @blocked_matmul(%arg0: tensor<?x32x32xf32>, %arg1: tensor<?x32x32xf32>
   return %0: tensor<32x32xf32>
 }
 
-// CHECK: func.func @blocked_matmul(
+// CHECK: func.func @blocked_matmul_6(
 // CHECK-SAME: %[[ARG0:.+]]: tensor<?x32x32xf32>, %[[ARG1:.+]]: tensor<?x32x32xf32>, %[[ARG2:.+]]: tensor<32x32xf32>)
 // CHECK: %[[MUL:.+]] = linalg.batch_reduce_matmul ins(%[[ARG0]], %[[ARG1]] : tensor<?x32x32xf32>, tensor<?x32x32xf32>) outs(%[[ARG2]] : tensor<32x32xf32>) -> tensor<32x32xf32>
 // CHECK: return %[[MUL]] : tensor<32x32xf32>

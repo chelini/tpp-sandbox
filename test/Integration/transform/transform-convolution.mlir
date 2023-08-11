@@ -29,25 +29,32 @@ func.func private @generate_1D_source(%init_source : tensor<8xf32>) -> tensor<8x
 
 func.func @conv(%arg0: tensor<1x1x8x8xf32>, %arg1: tensor<8xf32>, %conv_out: tensor<1x6x6x8xf32>) -> tensor<1x6x6x8xf32> {
   %1 = tensor.empty() : tensor<1x6x6x8xf32>
-  %2 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%arg1 : tensor<8xf32>) outs(%1 : tensor<1x6x6x8xf32>) {
+  %2 = linalg.generic {
+    indexing_maps = [#map, #map1], 
+    iterator_types = ["parallel", "parallel", "parallel", "parallel"]} 
+    ins(%arg1 : tensor<8xf32>) outs(%1 : tensor<1x6x6x8xf32>) {
     ^bb0(%in: f32, %out: f32):
       linalg.yield %in : f32
   } -> tensor<1x6x6x8xf32>
   // IR: linalg.batch_reduce_matmul
-  %3 = linalg.conv_2d_nhwc_hwcf ins(%2, %arg0 : tensor<1x6x6x8xf32>, tensor<1x1x8x8xf32>) outs(%conv_out : tensor<1x6x6x8xf32>) -> tensor<1x6x6x8xf32>
+  %3 = linalg.conv_2d_nhwc_hwcf ins(%2, %arg0 : tensor<1x6x6x8xf32>, tensor<1x1x8x8xf32>) 
+                                outs(%conv_out : tensor<1x6x6x8xf32>) -> tensor<1x6x6x8xf32>
   return %3 : tensor<1x6x6x8xf32>
 }
 
 transform.sequence failures(propagate) {
   ^bb0(%arg1: !transform.any_op):
-    %0 = transform.structured.match ops{["linalg.conv_2d_nhwc_hwcf"]} in %arg1 : (!transform.any_op) -> !transform.any_op
+    %0 = transform.structured.match ops{["linalg.conv_2d_nhwc_hwcf"]} in %arg1 
+      : (!transform.any_op) -> !transform.any_op
     // Blocks all the convs
-    %1 = transform.structured.pack_ext %0 blocking_factors = [2, 2] : !transform.any_op -> !transform.any_op 
+    %1 = transform.structured.pack_ext %0 blocking_factors = [2, 2] 
+      : !transform.any_op -> !transform.any_op 
     %2 = get_parent_op %1 : (!transform.any_op) -> !transform.any_op
     // Propagate all the packs
     transform.structured.packing_propagation %2 : !transform.any_op
 
-    %3 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
+    %3 = transform.structured.match ops{["linalg.generic"]} in %arg1 
+      : (!transform.any_op) -> !transform.any_op
     // Here we match the generic ops in the entire module. The conv is the last one.
     %generic:3 = split_handle %3 : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
     %4 = transform.structured.collapse %generic#2 [[0], [1], [2], [3], [4], [5, 6, 7], [8]]
@@ -56,7 +63,16 @@ transform.sequence failures(propagate) {
       : !transform.any_op -> !transform.any_op
     %6 = transform.structured.interchange %5 iterator_interchange = [0, 1, 4, 2, 3, 5] 
       : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %6 : !transform.any_op
+    %7, %loop:2 = transform.structured.tile_to_scf_for %6 [1, 1, 0, 0, 0, 0]
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+
+    %f = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
 func.func @entry() {

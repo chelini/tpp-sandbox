@@ -544,22 +544,6 @@ struct InterchangeAfterBlockingAndCollapsing
   }
 };
 
-struct MapToBRGEMM : OpRewritePattern<linalg::GenericOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
-                                PatternRewriter &rewriter) const override {
-    if (!tpp::utils::isMarkedWithTpp(
-            linalgOp, "tpp.BlockedCollapsedAndInterConv2DNchwFchwOp"))
-      return failure();
-    FailureOr<SmallVector<Value>> maybeLoopsOrGenericRes =
-        mlir::linalgx::rewriteToBRGemmOp(rewriter, linalgOp);
-    if (failed(maybeLoopsOrGenericRes))
-      return failure();
-    return success();
-  }
-};
-
 // patterns for mapping a Conv2DNhwcHwcfOp to a GEMM operation.
 void populateRewrite2DNhwcHwcfConvPatterns(RewritePatternSet &patterns) {
   patterns.insert<GeneralizeConv2DNhwcHwcf, RewriteConv2DNhwcHwcfToMatmul,
@@ -588,9 +572,10 @@ void populateRewriteBlockedConvPatterns(RewritePatternSet &patterns,
   }
   // Rewrite to BRGEMM.
   else {
-    patterns.insert<CollapseFilterAndImage,
-                    InterchangeAfterBlockingAndCollapsing, MapToBRGEMM>(
-        patterns.getContext());
+    linalg::populateLinalgDeGeneralizationPatterns(patterns);
+    patterns
+        .insert<CollapseFilterAndImage, InterchangeAfterBlockingAndCollapsing>(
+            patterns.getContext());
   }
 }
 

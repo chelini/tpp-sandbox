@@ -96,17 +96,12 @@ transform::CollapseOp::getReassociationIndices() {
 }
 
 //===----------------------------------------------------------------------===//
-// RewriteToBrgemmOp
+// Apply...PatternsOp
 //===----------------------------------------------------------------------===//
 
-DiagnosedSilenceableFailure transform::RewriteToBrgemmOp::applyToOne(
-    transform::TransformRewriter &rewriter, linalg::LinalgOp target,
-    ApplyToEachResultList &results, transform::TransformState &state) {
-  if (!llvm::isa_and_nonnull<linalg::GenericOp>(target))
-    return DiagnosedSilenceableFailure::success();
-  FailureOr<SmallVector<Value>> brgemmLoops = mlir::linalgx::rewriteToBRGemmOp(
-      rewriter, cast<linalg::GenericOp>(target));
-  return DiagnosedSilenceableFailure::success();
+void transform::ApplyLinalgDeGeneralizationPatternsOp::populatePatterns(
+    RewritePatternSet &patterns) {
+  linalg::populateLinalgDeGeneralizationPatterns(patterns);
 }
 
 //===----------------------------------------------------------------------===//

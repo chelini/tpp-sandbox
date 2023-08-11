@@ -101,13 +101,19 @@ transform.sequence failures(propagate) {
     // Fuse matmul + relu and map the matmul to BRGEMM
     %9, %loop1 = transform.structured.fuse %first_second { tile_sizes = [1, 0, 0] }
       : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-    %10 = get_producer_of_operand %9[0] : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %10 : !transform.any_op
 
     %11, %loop2 = transform.structured.fuse %third_fourth { tile_sizes = [1, 0, 0] }
       : (!transform.any_op) -> (!transform.any_op, !transform.any_op)
-    %12 = get_producer_of_operand %11[0] : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %12 : !transform.any_op
+
+    // map a packed matmul to a brgemm
+    %ff = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %ff {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_patterns.tensor.drop_redundant_insert_slice_rank_expansion
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
 // We have 4 layers. 1 loop for each layer and 1 outermost loop for all the layers
@@ -150,8 +156,14 @@ transform.sequence failures(propagate) {
     transform.structured.canonicalize %6
 
     // map a packed matmul to a brgemm
-    %7 = transform.structured.match ops{["linalg.generic"]} in %arg1 : (!transform.any_op) -> !transform.any_op
-    transform.structured.rewrite_to_brgemm %7 : !transform.any_op
+    %ff = transform.structured.match ops{["func.func"]} in %arg1 
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %ff {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_patterns.tensor.drop_redundant_insert_slice_rank_expansion
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
 func.func @mlp_single_layer_with_fusion(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t, %Bias: !Bias_tensor_t) -> !C_tensor_t {

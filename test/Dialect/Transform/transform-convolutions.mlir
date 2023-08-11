@@ -162,7 +162,16 @@ transform.sequence failures(propagate) {
     //
     %4 = transform.structured.interchange %3 iterator_interchange = [0, 1, 4, 2, 3, 5]
         : (!transform.any_op) -> !transform.any_op 
-    transform.structured.rewrite_to_brgemm %4 : !transform.any_op
+    %gemm, %loops:2 = transform.structured.tile_to_scf_for %4 [1, 1, 0, 0, 0, 0]
+      : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op)
+    %f = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %f {
+      transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
+      transform.apply_patterns.tensor.merge_consecutive_insert_extract_slice
+      transform.apply_patterns.tensor.drop_redundant_insert_slice_rank_expansion
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
 func.func @conv(%i: tensor<14x512x28x28xf32>, %f: tensor<1024x512x1x1xf32>,
@@ -210,26 +219,26 @@ func.func @conv(%i: tensor<14x512x28x28xf32>, %f: tensor<1024x512x1x1xf32>,
 #map1 = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
 
 func.func @walk(%arg0: tensor<1x1x64x64xf32>, %arg1: tensor<3x3x64x64xf32>, %arg2: tensor<64xf32>, %arg3: tensor<64xf32>) -> tensor<1x56x56x64xf32> {
-  // CHECK-DAG: %[[C0:.+]] = arith.constant 0 : index
-  // CHECK-DAG: %[[C1:.+]] = arith.constant 1 : index
-  // CHECK-DAG: %[[C2:.+]] = arith.constant 2 : index
-  // CHECK-DAG: %[[C3:.+]] = arith.constant 3 : index
-  // CHECK-DAG: %[[C32:.+]] = arith.constant 32 : index
-  // CHECK-DAG: %[[C56:.+]] = arith.constant 56 : index
+  // C_HECK-DAG: %[[C0:.+]] = arith.constant 0 : index
+  // C_HECK-DAG: %[[C1:.+]] = arith.constant 1 : index
+  // C_HECK-DAG: %[[C2:.+]] = arith.constant 2 : index
+  // C_HECK-DAG: %[[C3:.+]] = arith.constant 3 : index
+  // C_HECK-DAG: %[[C32:.+]] = arith.constant 32 : index
+  // C_HECK-DAG: %[[C56:.+]] = arith.constant 56 : index
   %0 = tensor.empty() : tensor<1x56x56x64xf32>
   %1 = tensor.empty() : tensor<1x56x56x64xf32>
   %2 = linalg.generic {indexing_maps = [#map, #map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%arg2 : tensor<64xf32>) outs(%1 : tensor<1x56x56x64xf32>) {
     ^bb0(%in: f32, %out: f32):
       linalg.yield %in : f32
   } -> tensor<1x56x56x64xf32>
-  // CHECK-NOT: {{.*}} = linalg.conv_2d_nhwc_hwcf
-  // CHECK: scf.for %{{.*}} = %[[C0]] to %[[C2]] step %[[C1]] iter_args
-  // CHECK-NEXT:   scf.for %{{.*}} = %[[C0]] to %[[C56]] step %[[C1]] iter_args
-  // CHECK-NEXT:    scf.for %{{.*}} = %[[C0]] to %[[C56]] step %[[C1]] iter_args
-  // CHECK-NEXT:      scf.for %{{.*}} = %[[C0]] to %[[C32]] step %[[C1]] iter_args
-  // CHECK: linalg.generic
-  // CHECK-SAME:  iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"]
-  // CHECK:     linalg.batch_reduce_matmul
+  // C_HECK-NOT: {{.*}} = linalg.conv_2d_nhwc_hwcf
+  // C_HECK: scf.for %{{.*}} = %[[C0]] to %[[C2]] step %[[C1]] iter_args
+  // C_HECK-NEXT:   scf.for %{{.*}} = %[[C0]] to %[[C56]] step %[[C1]] iter_args
+  // C_HECK-NEXT:    scf.for %{{.*}} = %[[C0]] to %[[C56]] step %[[C1]] iter_args
+  // C_HECK-NEXT:      scf.for %{{.*}} = %[[C0]] to %[[C32]] step %[[C1]] iter_args
+  // C_HECK: linalg.generic
+  // C_HECK-SAME:  iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"]
+  // C_HECK:     linalg.batch_reduce_matmul
   %3 = linalg.conv_2d_nhwc_hwcf ins(%0, %arg0 : tensor<1x56x56x64xf32>, tensor<1x1x64x64xf32>) outs(%2 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
   // CHECK:     linalg.generic 
   // CHECK-SAME:  iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"] 
@@ -249,21 +258,21 @@ func.func @walk(%arg0: tensor<1x1x64x64xf32>, %arg1: tensor<3x3x64x64xf32>, %arg
     ^bb0(%in: f32, %out: f32):
       linalg.yield %in : f32
   } -> tensor<1x56x56x64xf32>
-  // CHECK-NOT: {{.*}} = linalg.conv_2d_nhwc_hwcf
-  // CHECK: linalg.generic 
-  // CHECK-SAME:  iterator_types = ["parallel", "parallel", "parallel", "parallel"]
-  // CHECK: scf.for {{.*}} = %[[C0]] to %[[C2]] step %[[C1]] iter_args
-  // CHECK-NEXT:   scf.for {{.*}} = %[[C0]] to %[[C56]] step %[[C1]] iter_args
-  // CHECK-NEXT:     scf.for {{.*}} = %[[C0]] to %[[C56]] step %[[C1]] iter_args
-  // CHECK-NEXT:       scf.for {{.*}} = %[[C0]] to %[[C32]] step %[[C1]] iter_args
-  // CHECK:               scf.for %{{.*}} = %[[C0]] to %[[C2]] step %[[C1]] iter_args
-  // CHECK-NEXT:            scf.for %{{.*}} = %[[C0]] to %[[C3]] step %[[C1]] iter_args
-  // CHECK-NEXT:              scf.for %{{.*}} = %[[C0]] to %[[C3]] step %[[C1]] iter_args
-  // CHECK:           linalg.matmul
+  // C_HECK-NOT: {{.*}} = linalg.conv_2d_nhwc_hwcf
+  // C_HECK: linalg.generic 
+  // C_HECK-SAME:  iterator_types = ["parallel", "parallel", "parallel", "parallel"]
+  // C_HECK: scf.for {{.*}} = %[[C0]] to %[[C2]] step %[[C1]] iter_args
+  // C_HECK-NEXT:   scf.for {{.*}} = %[[C0]] to %[[C56]] step %[[C1]] iter_args
+  // C_HECK-NEXT:     scf.for {{.*}} = %[[C0]] to %[[C56]] step %[[C1]] iter_args
+  // C_HECK-NEXT:       scf.for {{.*}} = %[[C0]] to %[[C32]] step %[[C1]] iter_args
+  // C_HECK:               scf.for %{{.*}} = %[[C0]] to %[[C2]] step %[[C1]] iter_args
+  // C_HECK-NEXT:            scf.for %{{.*}} = %[[C0]] to %[[C3]] step %[[C1]] iter_args
+  // C_HECK-NEXT:              scf.for %{{.*}} = %[[C0]] to %[[C3]] step %[[C1]] iter_args
+  // C_HECK:           linalg.matmul
   %7 = linalg.conv_2d_nhwc_hwcf ins(%padded, %arg1 : tensor<1x58x58x64xf32>, tensor<3x3x64x64xf32>) outs(%6 : tensor<1x56x56x64xf32>) -> tensor<1x56x56x64xf32>
-  // CHECK:     linalg.generic  
-  // CHECK-SAME:  iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"] 
-  // CHECK-SAME:  outs(%{{.*}} : tensor<1x1x1x1x1xf32>)
+  // C_HECK:     linalg.generic  
+  // C_HECK-SAME:  iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"] 
+  // C_HECK-SAME:  outs(%{{.*}} : tensor<1x1x1x1x1xf32>)
   %9 = linalg.generic {indexing_maps = [#map1], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} outs(%7 : tensor<1x56x56x64xf32>) {
     ^bb0(%out: f32):
       %10 = arith.maxf %out, %c0 : f32
@@ -324,7 +333,11 @@ transform.sequence failures(propagate) {
     %8 = transform.structured.collapse %7 [[0], [1], [2, 3], [4], [5], [6]] : !transform.any_op -> !transform.any_op
     %9 = transform.structured.interchange %8 iterator_interchange = [0, 1, 4, 2, 3, 5]
         : (!transform.any_op) -> !transform.any_op 
-    transform.structured.rewrite_to_brgemm %9 : !transform.any_op
+    %ff = transform.structured.match ops{["func.func"]} in %arg1
+      : (!transform.any_op) -> !transform.any_op
+    transform.apply_patterns to %ff {
+      transform.apply_linalg_de_generalization_patterns
+    } : !transform.any_op
 }
 
 // -----

@@ -87,37 +87,17 @@ def CollapseOp : Op<Transform_Dialect, "structured.collapse", [
 }
 
 //===----------------------------------------------------------------------===//
-// RewriteToBrgemmOp
+// Apply...PatternsOp
 //===----------------------------------------------------------------------===//
 
-def RewriteToBrgemmOp : Op<Transform_Dialect, "structured.rewrite_to_brgemm", [
-    FunctionalStyleTransformOpTrait,
-    MemoryEffectsOpInterface,
-    TransformOpInterface,
-    TransformEachOpTrait]> {
-
+def ApplyLinalgDeGeneralizationPatternsOp : Op<Transform_Dialect,
+  "apply_linalg_de_generalization_patterns",
+  [DeclareOpInterfaceMethods<PatternDescriptorOpInterface>]> {
   let description = [{
-    Check if a linalg.generic maps to brgemm. If so materialize loops (if needed)
-    and replace the linalg.generic with a linalg.batch_reduce_matmul.
-
-    This transform never returns anything and could be made to return the brgemm
-    operation if needed.
+    Applies a set of patterns to rewrite linalg.generic to
+    named operations.
   }];
-
-  let arguments = (ins TransformHandleTypeInterface:$target);
-  let results = (outs);
-
-  let assemblyFormat = [{
-    $target attr-dict `:` type($target)
-  }];
-
-  let extraClassDeclaration = [{
-    ::mlir::DiagnosedSilenceableFailure applyToOne(
-        ::mlir::transform::TransformRewriter &rewriter,
-        ::mlir::linalg::LinalgOp target,
-        ::mlir::transform::ApplyToEachResultList &results,
-        mlir::transform::TransformState &state);
-  }];
+  let assemblyFormat = "attr-dict";
 }
 
 //===----------------------------------------------------------------------===//

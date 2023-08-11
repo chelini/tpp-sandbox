@@ -97,8 +97,7 @@ static FailureOr<SmallVector<int64_t>> verifyStrides(OpOperand *operand) {
 }
 
 // Return true if all the operand have the same type.
-static bool hasMixedTypes(linalg::LinalgOp linalgOp) {
-  // assert(linalgOp.getNumInitOperands > 0);
+static bool hasEqualTypes(linalg::LinalgOp linalgOp) {
   OpOperand *outputOperand = linalgOp.getDpsInitOperands().back();
   auto elemType = getElementTypeOrSelf(outputOperand->get().getType());
 
@@ -120,7 +119,7 @@ static bool hasMixedTypes(linalg::LinalgOp linalgOp) {
 static FailureOr<linalg::ContractionDimensions>
 checkStructure(linalg::LinalgOp linalgOp) {
   if (!linalgOp.hasBufferSemantics() || linalgOp.hasDynamicShape() ||
-      !hasMixedTypes(linalgOp)) {
+      !hasEqualTypes(linalgOp)) {
     LLVM_DEBUG(llvm::dbgs() << "[checkStructure] Failed preconditions\n");
     return failure();
   }
@@ -372,7 +371,7 @@ struct ConvertFillOpToUnaryZero : public OpRewritePattern<linalg::FillOp> {
   LogicalResult matchAndRewrite(linalg::FillOp fillOp,
                                 PatternRewriter &rewriter) const override {
     if (!fillOp.hasBufferSemantics() || fillOp.hasDynamicShape() ||
-        !hasMixedTypes(fillOp))
+        !hasEqualTypes(fillOp))
       return failure();
     auto input = fillOp.getDpsInputOperands()[0];
     if (!tpp::utils::isZeroTensor(input->get()))
@@ -412,7 +411,7 @@ struct ConvertTransposeOpToUnaryTranspose
   LogicalResult matchAndRewrite(linalg::TransposeOp transposeOp,
                                 PatternRewriter &rewriter) const override {
     if (!transposeOp.hasBufferSemantics() || transposeOp.hasDynamicShape() ||
-        !hasMixedTypes(transposeOp))
+        !hasEqualTypes(transposeOp))
       return failure();
     auto input = transposeOp.getDpsInputOperands()[0];
     auto output = transposeOp.getDpsInitOperands()[0];
@@ -551,7 +550,7 @@ struct ConvertGenericToUnaryRelu : public OpRewritePattern<linalg::GenericOp> {
   LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
     if (!genericOp.hasBufferSemantics() || genericOp.hasDynamicShape() ||
-        !hasMixedTypes(genericOp) || !linalg::isElementwise(genericOp)) {
+        !hasEqualTypes(genericOp) || !linalg::isElementwise(genericOp)) {
       return failure();
     }
     SmallVector<Value> operands;
@@ -595,7 +594,7 @@ struct ConvertGenericToBinaryAdd : public OpRewritePattern<linalg::GenericOp> {
   LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
     if (!genericOp.hasBufferSemantics() || genericOp.hasDynamicShape() ||
-        !hasMixedTypes(genericOp) || !linalg::isElementwise(genericOp)) {
+        !hasEqualTypes(genericOp) || !linalg::isElementwise(genericOp)) {
       return failure();
     }
     SmallVector<Value> operands;

@@ -96,8 +96,7 @@ void emitTransposeOnOperand(RewriterBase &rewriter, linalg::GenericOp linalgOp,
                             OpOperand *operand, unsigned dim, unsigned newDim);
 
 // Move the minor dimension as innermost.
-// Example:
-// C(m, n) += A(m, k) * B(k, n)
+// Example: C(m, n) += A(m, k) * B(k, n)
 // Move n innermost for C and B.
 // Move k innermost for A.
 FailureOr<linalg::GenericOp>

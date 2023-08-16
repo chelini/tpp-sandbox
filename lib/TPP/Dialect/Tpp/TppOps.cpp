@@ -103,7 +103,7 @@ static ParseResult parseTppOp(OpAsmParser &parser, OperationState &result) {
   NamedAttrList attrs;
   if (parser.parseOptionalAttrDict(attrs))
     return failure();
-  // Check if we parsed `operand_segment_sizes` already, otherwise add it.
+  // Check if we parsed `operandSegmentSizes` already, otherwise add it.
   if (!attrs.get(OPERAND_SEGMENT_SIZE)) {
     auto operandSegmentSize = parser.getBuilder().getDenseI32ArrayAttr(
         {numberOfInputs, numberOfOutputs});

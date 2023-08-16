@@ -456,7 +456,6 @@ def DefaultPipeline : Pass<"default-pipeline", "ModuleOp"> {
   ];
 }
 
-<<<<<<< HEAD
 def GPUToSPIRV : Pass<"gpu-to-spirv", "ModuleOp"> {
   let summary = "Convert GPU dialect to SPIR-V dialect";
   let description = [{

@@ -272,7 +272,7 @@ static void replaceOpWithBrgemm(RewriterBase &rewriter,
       rewriter.getContext(),
       ArrayRef<int64_t>{loops[m], loops[n], loops[k], lda, ldb, ldc, strideA,
                         strideB});
-  auto dtype = xsmm::utils::getXsmmDataType(
+  auto dtype = xsmm::utils::getDataType(
       rewriter, linalgOp.getDpsInitOperands()[0]->get().getType());
   IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
   Location loc = linalgOp.getLoc();
@@ -330,7 +330,7 @@ static void replaceOpWithUnary(RewriterBase &rewriter,
   DenseI64ArrayAttr dims = DenseI64ArrayAttr::get(
       rewriter.getContext(), ArrayRef<int64_t>{unaryInfo.m, unaryInfo.n,
                                                unaryInfo.ldi, unaryInfo.ldo});
-  auto dtype = xsmm::utils::getXsmmDataType(
+  auto dtype = xsmm::utils::getDataType(
       rewriter, linalgOp.getDpsInitOperands()[0]->get().getType());
   Value dispatched = rewriter.create<xsmm::UnaryDispatchOp>(
       loc, integer64, kind, dims, flags, dtype);
@@ -352,7 +352,7 @@ static void replaceOpWithBinary(RewriterBase &rewriter,
       rewriter.getContext(),
       ArrayRef<int64_t>{binaryInfo.m, binaryInfo.n, binaryInfo.ldiLhs,
                         binaryInfo.ldiRhs, binaryInfo.ldo});
-  auto dtype = xsmm::utils::getXsmmDataType(
+  auto dtype = xsmm::utils::getDataType(
       rewriter, linalgOp.getDpsInitOperands()[0]->get().getType());
   Value dispatched = rewriter.create<xsmm::BinaryDispatchOp>(
       loc, integer64, kind, dims, flags, dtype);

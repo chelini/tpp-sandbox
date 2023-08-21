@@ -35,7 +35,7 @@ func.func @matmul_static(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t, %
 
   // IR: scf.forall (%{{.+}}, %{{.+}}) in (2, 8) 
   // IR-NOT: scf.forall
-  // IR: xsmm.brgemm.dispatch [2, 2, 4, 4, 2, 2, 1, 1] flags = (none) data_type = f32 
+  // IR: xsmm.gemm.dispatch [2, 2, 4, 4, 2, 2] flags = (none) data_type = f32 
   %1 = linalg.generic {
     indexing_maps = [#map, #map1, #map2],
     iterator_types = ["parallel", "parallel", "parallel", "reduction", "parallel"]}
@@ -52,7 +52,7 @@ func.func @matmul_static(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t, %
     outs(%softmax_empty: tensor<2x8x2x2xf32>) -> tensor<2x8x2x2xf32>
 
   %2 = linalg.fill ins(%cst_fill : f32) outs(%C_exp: tensor<2x8x2x4xf32>) -> tensor<2x8x2x4xf32>
-  // IR: xsmm.brgemm.dispatch [2, 4, 2, 2, 4, 4, 1, 1] flags = (none) data_type = f32
+  // IR: xsmm.gemm.dispatch [2, 4, 2, 2, 4, 4] flags = (none) data_type = f32
   %3 = linalg.generic {
     indexing_maps = [#map, #map1, #map2],
     iterator_types = ["parallel", "parallel", "parallel", "reduction", "parallel"]}

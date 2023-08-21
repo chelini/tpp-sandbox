@@ -25,7 +25,6 @@ func.func @simple_batch(%arg0: tensor<64x8x32x64xf32>, %arg1: tensor<64x8x64x32x
 // CHECK-LABEL: simple_batch
 // CHECK-SAME:  %[[ARG0:.+]]: memref<64x8x32x64xf32>, %[[ARG1:.+]]: memref<64x8x64x32xf32>,
 // CHECK-SAME:  %[[ARG2:.+]]: memref<64x8x32x32xf32>
-// CHECK: %[[C1:.+]] = arith.constant 1 : i64
 // CHECK-DAG: %[[CST:.+]] = arith.constant 0.000000e+00 : f32
 // CHECK: scf.forall (%[[ARG3:.+]], %[[ARG4:.+]]) in (64, 8)
 // CHECK: %[[SUB:.+]] = memref.subview %[[ARG2]][%[[ARG3]], %[[ARG4]], 0, 0] [1, 1, 32, 32] [1, 1, 1, 1] 
@@ -36,8 +35,8 @@ func.func @simple_batch(%arg0: tensor<64x8x32x64xf32>, %arg1: tensor<64x8x64x32x
 // CHECK-SAME:  : memref<64x8x32x64xf32> to memref<32x64xf32, strided<[64, 1], offset: ?>>
 // CHECK: %[[SUB_1:.+]] = memref.subview %[[ARG1]][%[[ARG3]], %[[ARG4]], 0, 0] [1, 1, 64, 32] [1, 1, 1, 1] 
 // CHECK-SAME:  : memref<64x8x64x32xf32> to memref<64x32xf32, strided<[32, 1], offset: ?>>
-// CHECK: %[[BRGEMM:.+]] = xsmm.brgemm.dispatch [32, 32, 64, 64, 32, 32, 1, 1] flags = (none) data_type = f32
-// CHECK: xsmm.brgemm(data_type = f32, %[[BRGEMM]], %[[SUB_0]], %[[SUB_1]], %[[SUB]], %[[C1]])
+// CHECK: %[[BRGEMM:.+]] = xsmm.gemm.dispatch [32, 32, 64, 64, 32, 32] flags = (none) data_type = f32
+// CHECK: xsmm.gemm(data_type = f32, %[[BRGEMM]], %[[SUB_0]], %[[SUB_1]], %[[SUB]])
 
 // -----
 

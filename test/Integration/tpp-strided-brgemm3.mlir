@@ -28,7 +28,7 @@ func.func @matmul_static(%A : !A_tensor_t, %B : !B_tensor_t, %C : !C_tensor_t) {
   %fill = linalg.fill ins(%cst_fill : f32) outs(%empty: tensor<2x2x8x2xf32>) -> tensor<2x2x8x2xf32>
 
   // IR: xsmm.unary.dispatch zero [2, 2, 1, 16] flags = (bcast_scalar) data_type = f32
-  // IR: xsmm.brgemm.dispatch [2, 2, 4, 4, 16, 16, 1, 1] flags = (none) data_type = f32
+  // IR: xsmm.gemm.dispatch [2, 2, 4, 4, 16, 16] flags = (none) data_type = f32
   %gemm = linalg.generic {
     indexing_maps = [#map, #map1, #map2], 
     iterator_types = ["parallel", "parallel", "parallel", "reduction", "parallel"]} 

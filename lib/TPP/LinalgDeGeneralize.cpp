@@ -41,8 +41,6 @@ struct MatmulOpDeGeneralizationPattern
   using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
 
   bool isMatmulOp(linalg::LinalgOp linalgOp) const {
-    if (isa_and_nonnull<linalg::MatmulOp>(linalgOp))
-      return true;
     using namespace mlir::structured_match;
     using MapList = ArrayRef<ArrayRef<AffineExpr>>;
     auto infer = [](MapList m) { return AffineMap::inferFromExprList(m); };
@@ -83,8 +81,6 @@ struct BatchReduceOpDeGeneralizationPattern
   using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
 
   bool isBrgemmOp(linalg::LinalgOp linalgOp) const {
-    if (isa_and_nonnull<linalg::BatchReduceMatmulOp>(linalgOp))
-      return true;
     using namespace mlir::structured_match;
     using MapList = ArrayRef<ArrayRef<AffineExpr>>;
     auto infer = [](MapList m) { return AffineMap::inferFromExprList(m); };
@@ -126,8 +122,6 @@ struct FillOpDeGeneralizationPattern
   using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
 
   bool isFillOp(linalg::LinalgOp linalgOp) const {
-    if (isa_and_nonnull<linalg::FillOp>(linalgOp))
-      return true;
     using namespace mlir::structured_match;
     auto fillMatcher =
         StructuredOpMatcher::make<linalg::GenericOp>()
@@ -173,12 +167,51 @@ struct TppBrgemmDeGeneralizationPattern
   }
 };
 
+// Detect a 2d linalg generic transpose operation.
+struct TransposeOpDeGeneralizationPattern
+    : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  bool isTransposeOp(linalg::GenericOp linalgOp) const {
+    using namespace mlir::structured_match;
+    using MapList = ArrayRef<ArrayRef<AffineExpr>>;
+    auto infer = [](MapList m) { return AffineMap::inferFromExprList(m); };
+    AffineExpr i, j;
+    bindDims(linalgOp->getContext(), i, j);
+    auto mapList = infer({{i, j}, {j, i}});
+
+    auto transposeMatcher =
+        StructuredOpMatcher::make<linalg::GenericOp>()
+            .operation(NumDpsInits(EqualsTo(1)))
+            .operation(NumDpsInputs(EqualsTo(1)))
+            .operation(NumRegions(EqualsTo(1)))
+            .dim(MatchAll(), mlir::utils::IteratorType::parallel)
+            .input(MatchOne(0), HasMap(EqualsTo(mapList[0])))
+            .output(MatchOne(0), HasMap(EqualsTo(mapList[1])))
+            .region(MatchOne(0),
+                    WithSingleOp<linalg::YieldOp>(/*captures=*/nullptr));
+    return transposeMatcher.match(linalgOp);
+  }
+
+  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    if (!isTransposeOp(linalgOp))
+      return failure();
+    Value inputOperand = linalgOp.getDpsInputOperands()[0]->get();
+    Value outputOperand = linalgOp.getDpsInitOperands()[0]->get();
+    rewriter.replaceOpWithNewOp<linalg::TransposeOp>(
+        linalgOp, inputOperand, outputOperand, SmallVector<int64_t>{1, 0});
+    return success();
+  }
+};
+
 } // namespace
 
 void mlir::linalg::populateLinalgDeGeneralizationPatterns(
     RewritePatternSet &patterns) {
   patterns.add<FillOpDeGeneralizationPattern, MatmulOpDeGeneralizationPattern,
-               BatchReduceOpDeGeneralizationPattern>(patterns.getContext());
+               BatchReduceOpDeGeneralizationPattern,
+               TransposeOpDeGeneralizationPattern>(patterns.getContext());
 }
 
 void mlir::tpp::populateTppDeGeneralizationPatterns(

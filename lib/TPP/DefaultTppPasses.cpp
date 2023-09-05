@@ -436,6 +436,7 @@ private:
       // Lower all Tile operations.
       pm.addNestedPass<func::FuncOp>(
           createTppLoweringPass(tppToLoops, linalgToXsmm));
+      pm.addNestedPass<func::FuncOp>(createFoldXsmmFlagsPass());
       pm.addNestedPass<func::FuncOp>(createCleanupPass());
     }
 

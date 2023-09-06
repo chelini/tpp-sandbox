@@ -774,34 +774,47 @@ static LogicalResult foldFlags(RewriterBase &rewriter, OpTy gemmDispatchOp) {
     if (auto subView = dyn_cast_or_null<memref::SubViewOp>(maybeAlloc)) {
       output = subView.getSource();
       maybeAlloc = subView.getSource().getDefiningOp();
-    }
-    if (isa<BlockArgument>(output))
+    } else if (isa<BlockArgument>(output))
       break;
-    if (isa<memref::AllocOp>(maybeAlloc))
+    else if (isa<memref::AllocOp>(maybeAlloc))
       break;
+    else
+      return failure();
   }
 
   SetVector<Operation *> forwardSlice;
   mlir::getForwardSlice(output, &forwardSlice);
   Operation *maybeZeroOp = nullptr;
   for (Operation *op : forwardSlice) {
-    if (isa_and_nonnull<xsmm::UnaryOp>(op))
+    if (isa_and_nonnull<xsmm::UnaryOp>(op)) {
       maybeZeroOp = op;
+    }
+    if (maybeZeroOp) {
+      if (isa<CopyOpInterface>(op))
+        return failure();
+      if (auto maybeIdentity = dyn_cast_or_null<xsmm::UnaryOp>(op)) {
+        auto kind = maybeIdentity.getCallee();
+        if (kind == xsmm::UnaryKind::IDENTITY)
+          return failure();
+      }
+    }
   }
   if (!maybeZeroOp)
     return failure();
-  xsmm::UnaryDispatchOp zeroDispatchOp = cast<xsmm::UnaryDispatchOp>(
-      cast<xsmm::UnaryOp>(maybeZeroOp).getInputs()[0].getDefiningOp());
-  auto kind = zeroDispatchOp.getKind();
-  if (kind != xsmm::UnaryKind::ZERO)
-    return failure();
-
+  if (auto unaryOp = dyn_cast<xsmm::UnaryOp>(maybeZeroOp)) {
+    auto kind = unaryOp.getCallee();
+    if (kind != xsmm::UnaryKind::ZERO)
+      return failure();
+  }
   rewriter.updateRootInPlace(gemmDispatchOp, [&]() {
     ArrayAttr flags = gemmDispatchOp.getFlags();
     SmallVector<Attribute> newFlags;
     for (auto flag : flags) {
       // None.
       if (flag.dyn_cast<IntegerAttr>().getInt() == 0)
+        continue;
+      // Beta 0.
+      if (flag.dyn_cast<IntegerAttr>().getInt() == 4)
         continue;
       newFlags.push_back(flag);
     }
@@ -818,6 +831,7 @@ struct FoldZeroInBrgemm : public OpRewritePattern<xsmm::BrgemmDispatchOp> {
 
   LogicalResult matchAndRewrite(xsmm::BrgemmDispatchOp brgemmDispatchOp,
                                 PatternRewriter &rewriter) const override {
+
     return foldFlags<xsmm::BrgemmDispatchOp>(rewriter, brgemmDispatchOp);
   }
 };

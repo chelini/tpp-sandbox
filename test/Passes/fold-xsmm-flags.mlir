@@ -226,3 +226,29 @@ func.func @zero_sub(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) {
 
 // CHECK-LABEL: zero_sub
 // CHECK: %{{.+}} = xsmm.gemm.dispatch [32, 32, 64, 32, 32, 64] flags = (beta_0) data_type = f32
+
+// -----
+
+func.func @copy_in_between(%arg0: memref<10x10xf32>, %arg1: memref<10x10xf32>) {
+  %cst = arith.constant 0.0 : f32
+ 
+  // We cannot fold the zero in %3, otherwise we copy garbage in `memref.copy`.
+  %alloc = memref.alloc() {alignment = 64 : i64} : memref<10x10xf32>
+  %1 = xsmm.unary.dispatch zero [10, 10, 1, 10] flags = (bcast_scalar) data_type = f32
+  xsmm.unary zero(data_type = f32, %1, %cst, %alloc) : (i64, f32, memref<10x10xf32>) -> ()
+  
+  %alloc_0 = memref.alloc() {alignment = 64 : i64} : memref<10x10xf32>
+  memref.copy %alloc, %alloc_0 : memref<10x10xf32> to memref<10x10xf32>
+  %2 = xsmm.gemm.dispatch [10, 10, 10, 10, 10, 10] flags = (none) data_type = f32
+  xsmm.gemm(data_type = f32, %2, %arg0, %arg1, %alloc_0) 
+    : (i64, memref<10x10xf32>, memref<10x10xf32>, memref<10x10xf32>) -> ()
+
+  %3 = xsmm.gemm.dispatch [10, 10, 10, 10, 10, 10] flags = (none) data_type = f32
+  xsmm.gemm(data_type = f32, %3, %arg0, %arg1, %alloc)
+    : (i64, memref<10x10xf32>, memref<10x10xf32>, memref<10x10xf32>) -> ()
+
+  return
+}
+
+// CHECK-LABEL: copy_in_between
+// CHECK-COUNT-2: %{{.+}} = xsmm.gemm.dispatch [10, 10, 10, 10, 10, 10] flags = (none) data_type = f32

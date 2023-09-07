@@ -132,26 +132,6 @@ func.func @zero_with_copy(%arg0: memref<32x512xf32, strided<[512, 1], offset: ?>
 
 // -----
 
-// Copy prevents folding.
-func.func @zero_with_copy(%arg0: memref<32x512xf32, strided<[512, 1], offset: ?>>,
-                          %arg1: memref<512x64xf32, strided<[512, 1], offset: ?>>,
-                          %arg2: memref<32x64xf32>) {
-  %cst = arith.constant 0.000000e+00 : f32
-  %alloc = memref.alloc() {alignment = 64 : i64} : memref<32x64xf32>
-  %0 = xsmm.unary.dispatch zero [32, 64, 1, 64] flags = (bcast_scalar) data_type = f32
-  xsmm.unary zero(data_type = f32, %0, %cst, %alloc) : (i64, f32, memref<32x64xf32>) -> ()
-  memref.copy %alloc, %arg2 : memref<32x64xf32> to memref<32x64xf32>
-  %1 = xsmm.gemm.dispatch [32, 64, 512, 512, 512, 64] flags = (none) data_type = f32
-  xsmm.gemm(data_type = f32, %1, %arg0, %arg1, %arg2) : (i64, memref<32x512xf32, strided<[512, 1], offset: ?>>, memref<512x64xf32, strided<[512, 1], offset: ?>>, memref<32x64xf32>) -> ()
-  return
-}
-
-// CHECK-LABEL: zero_with_copy
-// CHECK: xsmm.unary.dispatch zero
-// CHECK: %{{.+}} = xsmm.gemm.dispatch [32, 64, 512, 512, 512, 64] flags = (none) data_type = f32
-
-// -----
-
 func.func @zero_sub(%arg0: memref<32x32xf32>, %arg1: memref<32x32xf32>) {
   %alloc = memref.alloc() {alignment = 64 : i64} : memref<4x3x2x5x32x64xf32>
   %cst = arith.constant 0.000000e+00 : f32
@@ -251,4 +231,64 @@ func.func @copy_in_between(%arg0: memref<10x10xf32>, %arg1: memref<10x10xf32>) {
 }
 
 // CHECK-LABEL: copy_in_between
-// CHECK-COUNT-2: %{{.+}} = xsmm.gemm.dispatch [10, 10, 10, 10, 10, 10] flags = (none) data_type = f32
+// CHECK-COUNT-2: %{{.+}} = xsmm.gemm.dispatch [10, 10, 10, 10, 10, 10] flags = (beta_0) data_type = f32
+
+// -----
+
+func.func @replace_copy_with_zeros() {
+  %cst = arith.constant 0.000000e+00 : f32
+  %alloc = memref.alloc() : memref<32x64xf32>
+  %0 = xsmm.unary.dispatch zero [32, 64, 1, 64] flags = (bcast_scalar) data_type = f32
+  xsmm.unary zero(data_type = f32, %0, %cst, %alloc) : (i64, f32, memref<32x64xf32>) -> ()
+  %alloc_0 = memref.alloc() : memref<32x64xf32>
+  memref.copy %alloc, %alloc_0 : memref<32x64xf32> to memref<32x64xf32>
+  return
+}
+
+// CHECK-LABEL: replace_copy_with_zeros
+// CHECK: %[[CST:.+]] = arith.constant 0.000000e+00 : f32
+// CHECK: %[[ALLOC:.+]] = memref.alloc() : memref<32x64xf32>
+// CHECK: %[[DIS:.+]] = xsmm.unary.dispatch zero [32, 64, 1, 64] flags = (bcast_scalar) data_type = f32
+// CHECK: xsmm.unary zero(data_type = f32, %[[DIS]], %[[CST]], %[[ALLOC]]) : (i64, f32, memref<32x64xf32>) -> ()
+// CHECK: %[[ALLOC_0:.+]] = memref.alloc() : memref<32x64xf32>
+// CHECK: xsmm.unary zero(data_type = f32, %[[DIS]], %[[CST]], %[[ALLOC_0]]) : (i64, f32, memref<32x64xf32>) -> ()
+
+// -----
+
+func.func @replace_copy_with_zeros() {
+  %cst = arith.constant 0.000000e+00 : f32
+  %alloc = memref.alloc() : memref<32x64xf32>
+  %0 = xsmm.unary.dispatch zero [32, 64, 1, 64] flags = (bcast_scalar) data_type = f32
+  xsmm.unary zero(data_type = f32, %0, %cst, %alloc) : (i64, f32, memref<32x64xf32>) -> ()
+  %alloc_0 = memref.alloc() : memref<32x64xf32>
+  memref.copy %alloc, %alloc_0 : memref<32x64xf32> to memref<32x64xf32>
+  %alloc_1 = memref.alloc() : memref<32x64xf32>
+  // Pattern rewriter seems to miss the newly created zero op and 
+  // seems to work on a frozer IR, thus we miss to fold the last copy.
+  // try with `walk`.
+  memref.copy %alloc_0, %alloc_1 : memref<32x64xf32> to memref<32x64xf32>
+  return
+}
+
+// CHECK-LABEL: replace_copy_with_zeros
+
+// -----
+
+func.func private @may_modify(%memref : memref<2x2xf32>)
+
+func.func @replace_copy_with_zeros() {
+  %cst = arith.constant 0.000000e+00 : f32
+  %alloc = memref.alloc() : memref<32x64xf32>
+  %0 = xsmm.unary.dispatch zero [32, 64, 1, 64] flags = (bcast_scalar) data_type = f32
+  xsmm.unary zero(data_type = f32, %0, %cst, %alloc) : (i64, f32, memref<32x64xf32>) -> ()
+  %sub = memref.subview %alloc [0, 0][2, 2][1, 1] : memref<32x64xf32> to memref<2x2xf32>
+  call @may_modify(%sub) : (memref<2x2xf32>) -> ()
+  %alloc_0 = memref.alloc() : memref<32x64xf32>
+  memref.copy %alloc, %alloc_0 : memref<32x64xf32> to memref<32x64xf32>
+  return
+}
+
+// CHECK-LABEL: replace_copy_with_zeros
+// CHECK: call @may_modify
+// CHECK-NEXT: memref.alloc
+// CHECK-NEXT: memref.copy

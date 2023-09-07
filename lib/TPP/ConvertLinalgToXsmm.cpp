@@ -814,6 +814,42 @@ struct FoldZeroInGemm : public OpRewritePattern<xsmm::GemmDispatchOp> {
   }
 };
 
+struct ZeroCopyRepl : public OpRewritePattern<memref::CopyOp> {
+  using OpRewritePattern<memref::CopyOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(memref::CopyOp copyOp,
+                                PatternRewriter &rewriter) const override {
+    Value source = copyOp.getSource();
+    SetVector<Operation *> forwardSlice;
+    mlir::getForwardSlice(source, &forwardSlice);
+    xsmm::UnaryOp zeroOp = nullptr;
+    for (Operation *op : forwardSlice) {
+      // take lock.
+      if (auto unaryOp = dyn_cast_or_null<xsmm::UnaryOp>(op)) {
+        auto kind = unaryOp.getCallee();
+        if (kind == xsmm::UnaryKind::ZERO)
+          zeroOp = unaryOp;
+        continue;
+      }
+      // other references to alloc without lock.
+      if (!zeroOp || (isa<memref::CopyOp>(op) && op != copyOp.getOperation()))
+        return failure();
+      // release lock.
+      if (isa<memref::CopyOp>(op))
+        break;
+      // other references to alloc within the lock before releasing it.
+      if (zeroOp)
+        return failure();
+    }
+    SmallVector<Value> operands = zeroOp.getInputs();
+    operands.pop_back();
+    operands.push_back(copyOp.getTarget());
+    rewriter.replaceOpWithNewOp<xsmm::UnaryOp>(copyOp, zeroOp.getDataType(),
+                                               zeroOp.getCallee(), operands);
+    return success();
+  }
+};
+
 void ConvertLinalgToXsmm::runOnOperation() {
   MLIRContext *ctx = &getContext();
   RewritePatternSet patterns(ctx);
@@ -852,7 +888,7 @@ void ConvertLinalgToXsmm::runOnOperation() {
 void FoldXsmmFlags::runOnOperation() {
   MLIRContext *ctx = &getContext();
   RewritePatternSet patterns(ctx);
-  patterns.add<FoldZeroInGemm, FoldZeroInBrgemm>(ctx);
+  patterns.add<FoldZeroInGemm, FoldZeroInBrgemm, ZeroCopyRepl>(ctx);
   if (failed(applyPatternsAndFoldGreedily(getOperation(), std::move(patterns))))
     return signalPassFailure();
 }

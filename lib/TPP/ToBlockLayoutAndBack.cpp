@@ -740,6 +740,7 @@ struct SimplifyAndCanonicalizePack
     tensor::populateSimplifyTensorPack(patterns);
     tensor::PackOp::getCanonicalizationPatterns(patterns, ctx);
     tensor::UnPackOp::getCanonicalizationPatterns(patterns, ctx);
+    linalg::FillOp::getCanonicalizationPatterns(patterns, ctx);
     patterns.add<SimplifyPackToEmpty>(ctx);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
   }

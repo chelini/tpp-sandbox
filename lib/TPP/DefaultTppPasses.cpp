@@ -446,10 +446,6 @@ private:
       pm.addNestedPass<func::FuncOp>(createCleanupPass());
     }
 
-    // Convert forAll to parallel loops should run after bufferization
-    // as scf.parallel does not handle tensor.
-    pm.addPass(createConvertForAllToParallelOpPass());
-
     // Covert all local TPP-related dialects.
     pm.addPass(createLocalDialectsLoweringPass());
 

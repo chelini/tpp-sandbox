@@ -127,7 +127,6 @@ private:
     // abstraction.
     pm.addPass(createGeneralizeTensorPackAndUnPackPass());
     pm.addPass(createBufferizePass());
-    pm.addPass(createConvertForAllToParallelOpPass());
     pm.addNestedPass<func::FuncOp>(createCleanupPass());
 
     // Convert to generic GPU ops.

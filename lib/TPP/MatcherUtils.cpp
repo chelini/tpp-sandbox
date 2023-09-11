@@ -117,11 +117,11 @@ static bool hasReluBody(Operation *op, SmallVectorImpl<Value> *captured) {
   if (yieldOp->getNumOperands() != 1)
     return false;
   Operation *innerOp = &(*linalgOp.getBlock()->getOperations().begin());
-  if (!isa<arith::MaxFOp>(innerOp))
+  if (!isa<arith::MaximumFOp>(innerOp))
     return false;
   if (yieldOp->getOperand(0).getDefiningOp() != innerOp)
     return false;
-  auto maxfOp = cast<arith::MaxFOp>(innerOp);
+  auto maxfOp = cast<arith::MaximumFOp>(innerOp);
   Value maxfLhs = maxfOp.getLhs();
   Value maxfRhs = maxfOp.getRhs();
 
@@ -241,7 +241,7 @@ bool isTwoDBiasReluOp(linalg::LinalgOp linalgOp,
   auto biasReluMatcher = 
     StructuredOpMatcher::make<linalg::LinalgOp>()
       .region(MatchOne(0), 
-              WithOpChain<arith::AddFOp, arith::MaxFOp>(operands));
+              WithOpChain<arith::AddFOp, arith::MaximumFOp>(operands));
   // clang-format on
 
   if (!isTppBinaryOp(linalgOp) || !biasReluMatcher.match(linalgOp))

@@ -11,7 +11,7 @@ func.func @matmul_eletwise(%arg0: tensor<64x64xf32>, %arg1: tensor<64x64xf32>,
                        iterator_types = ["parallel", "parallel"]} 
     outs(%0: tensor<64x64xf32>) {
       ^bb0(%out: f32):
-        %2 = arith.maxf %out, %c0 : f32
+        %2 = arith.maximumf %out, %c0 : f32
         linalg.yield %2 : f32
     } -> tensor<64x64xf32>
   return %1 : tensor<64x64xf32>
@@ -46,7 +46,7 @@ func.func @expect_not_to_fuse_tile_sizes_do_not_divide(
                        iterator_types = ["parallel", "parallel"]} 
     outs(%0: tensor<2x2xf32>) {
       ^bb0(%out: f32):
-        %2 = arith.maxf %out, %c0 : f32
+        %2 = arith.maximumf %out, %c0 : f32
         linalg.yield %2 : f32
     } -> tensor<2x2xf32>
   return %1 : tensor<2x2xf32>
@@ -83,7 +83,7 @@ func.func @blocked_matmul(%arg0: tensor<4x16x32x32xf32>, %arg1: tensor<8x16x32x3
                        iterator_types = ["parallel", "parallel", "parallel", "parallel"]}
     outs(%0: tensor<4x8x32x32xf32>) {
       ^bb0(%out: f32):
-        %2 = arith.maxf %out, %c0 : f32
+        %2 = arith.maximumf %out, %c0 : f32
         linalg.yield %2 : f32
   } -> tensor<4x8x32x32xf32>
   return %1 :  tensor<4x8x32x32xf32>
@@ -122,7 +122,7 @@ func.func @blocked_convolutions(%arg0: tensor<14x16x28x28x32xf32>, %arg1: tensor
                        iterator_types = ["parallel", "parallel", "parallel", "parallel", "parallel"]}
     outs(%0: tensor<14x32x28x28x32xf32>) {
       ^bb0(%out: f32):
-        %2 = arith.maxf %out, %c0 : f32
+        %2 = arith.maximumf %out, %c0 : f32
         linalg.yield %2 : f32
   } -> tensor<14x32x28x28x32xf32>
   return %1 : tensor<14x32x28x28x32xf32>
@@ -156,7 +156,7 @@ func.func @blocked_matmul_with_wrong_region(
                        iterator_types = ["parallel", "parallel", "parallel", "parallel"]}
     outs(%0: tensor<4x8x32x32xf32>) {
       ^bb0(%out: f32):
-        %2 = arith.maxf %out, %c0 : f32
+        %2 = arith.maximumf %out, %c0 : f32
         linalg.yield %2 : f32
   } -> tensor<4x8x32x32xf32>
   return %1 :  tensor<4x8x32x32xf32>
@@ -208,7 +208,7 @@ func.func @blocked_matmul_with_vnni_blocking(
     ins(%1 : tensor<8x48x32x32xbf16>) 
     outs(%arg3 : tensor<8x48x32x32xbf16>) {
     ^bb0(%in: bf16, %out: bf16):
-      %3 = arith.maxf %in, %cst : bf16
+      %3 = arith.maximumf %in, %cst : bf16
       linalg.yield %3 : bf16
   } -> tensor<8x48x32x32xbf16>
   return %2 : tensor<8x48x32x32xbf16>
@@ -228,7 +228,7 @@ func.func @matmul_fuse_with_fill(%arg0: tensor<64x64xf32>, %arg1: tensor<64x64xf
                        iterator_types = ["parallel", "parallel"]} 
     outs(%0: tensor<64x64xf32>) {
       ^bb0(%out: f32):
-        %2 = arith.maxf %out, %c0 : f32
+        %2 = arith.maximumf %out, %c0 : f32
         linalg.yield %2 : f32
   } -> tensor<64x64xf32>
   return %1 : tensor<64x64xf32>
@@ -281,7 +281,7 @@ func.func @blocked_matmul_with_fill(%arg0: tensor<4x16x32x32xf32>, %arg1: tensor
                        iterator_types = ["parallel", "parallel", "parallel", "parallel"]}
     outs(%0: tensor<4x8x32x32xf32>) {
       ^bb0(%out: f32):
-        %2 = arith.maxf %out, %c0 : f32
+        %2 = arith.maximumf %out, %c0 : f32
         linalg.yield %2 : f32
   } -> tensor<4x8x32x32xf32>
   return %1 :  tensor<4x8x32x32xf32>

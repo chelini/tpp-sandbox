@@ -41,6 +41,11 @@ llvm::cl::opt<bool> defPipePack("def-pack",
                                 llvm::cl::init(true));
 
 llvm::cl::opt<bool>
+    defTileAndFuse("def-tile-and-fuse",
+                  llvm::cl::desc("Default pipeline - tile and fuse"),
+                  llvm::cl::init(true));
+
+llvm::cl::opt<bool>
     disableDefPipe("disable-def-pipe",
                    llvm::cl::desc("Disable default pipeline execution"),
                    llvm::cl::init(false));
@@ -255,9 +260,10 @@ private:
     pm.addPass(createPropagatePackUnPackPass());
     pm.addPass(createConstantFoldPackPass());
     pm.addPass(createSimplifyAndCanonicalizePackPass());
-
-    pm.addPass(createTileConsumerAndFuseProducersPass());
-    pm.addPass(createCanonicalizerPass());
+    if (defTileAndFuse) {
+      pm.addPass(createTileConsumerAndFuseProducersPass());
+      pm.addPass(createCanonicalizerPass());
+    } 
     pm.addPass(createConvertPackUnpackOptimization());
 
     // Generalize tensor.pack and tensor.unpack.

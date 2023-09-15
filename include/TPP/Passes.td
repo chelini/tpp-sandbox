@@ -218,6 +218,19 @@ def TileConsumerAndFuseProducers : Pass<"tile-consumer-and-fuse-producers",
                            "tensor::TensorDialect", "tpp::TppDialect"];
 }
 
+def ElementWiseFusion : Pass<"element-wise-fusion", "func::FuncOp"> {
+  let summary = "Run linalg element-wise fusion";
+  let constructor = "mlir::tpp::createElementWiseFusionPass()";
+  let dependentDialects = ["linalg::LinalgDialect"];
+}
+
+def TileContractionReductions : Pass<"tile-contraction-reductions",
+                                     "func::FuncOp"> {
+  let summary = "Tile reduction dimensions in contraction operations";
+  let constructor = "mlir::tpp::createTileContractionReductionsPass()";
+  let dependentDialects = ["linalg::LinalgDialect", "scf::SCFDialect"];
+}
+
 def RewriteConvToMatmulOrBrgemm : Pass<"rewrite-conv-to-matmul-or-brgemm", 
                                        "func::FuncOp"> {
   let summary = "Rewrite Conv2DNhwcHwcfOp/Conv2DNchwFchwOp to Matmul or Brgemm.";
@@ -304,11 +317,6 @@ def ConstantFoldPack : Pass<"constant-fold-pack", "ModuleOp"> {
     Reduce pack overhead by folding tensor.pack into constant tensors.
   }];
   let constructor = "mlir::tpp::createConstantFoldPackPass()";
-}
-
-def ElementWiseFusion : Pass<"element-wise-fusion", "func::FuncOp"> {
-  let summary = "Run linalg element-wise fusion";
-  let constructor = "mlir::tpp::createElementWiseFusionPass()";
 }
 
 def ConvInitSimplify : Pass<"conv-init-simplify", "func::FuncOp"> {

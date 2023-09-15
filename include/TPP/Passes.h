@@ -160,6 +160,8 @@ std::unique_ptr<OperationPass<func::FuncOp>> createLinalgToGpuPass();
 std::unique_ptr<OperationPass<func::FuncOp>>
 createConvertPackUnpackOptimization();
 std::unique_ptr<OperationPass<func::FuncOp>> createFoldXsmmFlagsPass();
+std::unique_ptr<OperationPass<func::FuncOp>>
+createTileContractionReductionsPass();
 
 // Testing passes.
 void registerTestStructuralMatchers();

@@ -866,6 +866,38 @@ struct ElementWiseFusion : ElementWiseFusionBase<ElementWiseFusion> {
   }
 };
 
+struct TileContractionReductions
+    : TileContractionReductionsBase<TileContractionReductions> {
+  void runOnOperation() override {
+    func::FuncOp funcOp = getOperation();
+    auto &ctx = getContext();
+    IRRewriter rewriter(&ctx);
+
+    SmallVector<linalg::MatmulOp> matmulOps;
+    funcOp->walk(
+        [&](linalg::MatmulOp matmulOp) { matmulOps.push_back(matmulOp); });
+
+    SmallVector<int64_t> tiles = {0, 0, 64};
+    for (linalg::MatmulOp matmulOp : matmulOps) {
+      rewriter.setInsertionPoint(matmulOp);
+      FailureOr<scf::SCFReductionTilingResult> result =
+          scf::tileReductionUsingScf(
+              rewriter,
+              cast<PartialReductionOpInterface>(matmulOp.getOperation()),
+              getAsOpFoldResult(rewriter.getI64ArrayAttr(tiles)));
+      if (failed(result))
+        return signalPassFailure();
+    }
+
+    // Attempt to recover named ops.
+    RewritePatternSet patterns(&ctx);
+    linalg::populateLinalgDeGeneralizationPatterns(patterns);
+    tpp::populateTppDeGeneralizationPatterns(patterns);
+    scf::ForallOp::getCanonicalizationPatterns(patterns, &ctx);
+    (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+  }
+};
+
 } // end namespace
 
 std::unique_ptr<OperationPass<func::FuncOp>>
@@ -876,4 +908,9 @@ mlir::tpp::createTileConsumerAndFuseProducersPass(ArrayRef<int64_t> tileSizes) {
 std::unique_ptr<OperationPass<func::FuncOp>>
 mlir::tpp::createElementWiseFusionPass() {
   return std::make_unique<ElementWiseFusion>();
+}
+
+std::unique_ptr<OperationPass<func::FuncOp>>
+mlir::tpp::createTileContractionReductionsPass() {
+  return std::make_unique<TileContractionReductions>();
 }

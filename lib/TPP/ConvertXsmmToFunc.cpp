@@ -43,7 +43,6 @@ static SmallVector<Type> extractInvokeOperandTypes(OpBuilder &builder,
       Type basePtrType =
           LLVM::LLVMPointerType::get(memrefType.getElementType());
       results.push_back(basePtrType);
-      results.push_back(builder.getIndexType()); // offset
     } else {
       results.push_back(operand.getType());
     }
@@ -67,9 +66,8 @@ static SmallVector<Value> getOperands(OpBuilder &builder, Location loc,
       res.push_back(operand);
       continue;
     }
-    auto [ptr, offset] = utils::getPtrAndOffset(builder, operand, loc);
+    auto ptr = utils::extractValuePtrFromMemRef(builder, operand, loc);
     res.push_back(ptr);
-    res.push_back(offset);
   }
   return res;
 }

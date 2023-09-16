@@ -46,32 +46,30 @@ extern "C" MLIR_RUNNERUTILS_EXPORT int64_t xsmm_fused_brgemm_dispatch(
 
 extern "C" MLIR_RUNNERUTILS_EXPORT void
 xsmm_gemm_invoke(const libxsmm_datatype dType, int64_t addr, void *alignedPtrA,
-                 int64_t offsetA, void *alignedPtrB, int64_t offsetB,
-                 void *alignedPtrC, int64_t offsetC);
+                 void *alignedPtrB, void *alignedPtrC);
 
 extern "C" MLIR_RUNNERUTILS_EXPORT void
 xsmm_unary_invoke(const libxsmm_datatype dType, int64_t addr,
-                  void *alignedPtrIn, int64_t offsetIn, void *alignedPtrOut,
-                  int64_t offsetOut);
+                  void *alignedPtrIn, void *alignedPtrOut);
 
 extern "C" MLIR_RUNNERUTILS_EXPORT void
 xsmm_unary_scalar_invoke(const libxsmm_datatype, int64_t addr, float scalar,
-                         void *alignedPtrOut, int64_t offsetOut);
+                         void *alignedPtrOut);
 
 extern "C" MLIR_RUNNERUTILS_EXPORT void
 xsmm_binary_invoke(const libxsmm_datatype dType, int64_t addr,
-                   void *alignedPtrLhs, int64_t offsetLhs, void *alignedPtrRhs,
-                   int64_t offsetRhs, void *alignedPtrOut, int64_t offsetOut);
+                   void *alignedPtrLhs, void *alignedPtrRhs,
+                   void *alignedPtrOut);
 
 extern "C" MLIR_RUNNERUTILS_EXPORT void
 xsmm_brgemm_invoke(const libxsmm_datatype dType, int64_t addr,
-                   void *alignedPtrA, int64_t offsetA, void *alignedPtrB,
-                   int64_t offsetB, void *alignedPtrC, int64_t offsetC,
+                   void *alignedPtrA, void *alignedPtrB, void *alignedPtrC,
                    int64_t numBatches);
 
-extern "C" MLIR_RUNNERUTILS_EXPORT void xsmm_fused_brgemm_invoke(
-    const libxsmm_datatype dType, int64_t addr, void *alignedPtrA,
-    int64_t offsetA, void *alignedPtrB, int64_t offsetB, void *alignedPtrC,
-    int64_t offsetC, void *alignedPtrD, int64_t offsetD, int64_t numBatches);
+extern "C" MLIR_RUNNERUTILS_EXPORT void
+xsmm_fused_brgemm_invoke(const libxsmm_datatype dType, int64_t addr,
+                         void *alignedPtrA, void *alignedPtrB,
+                         void *alignedPtrC, void *alignedPtrD,
+                         int64_t numBatches);
 
 #endif // TPP_EXECUTIONENGINE_CRUNNERUTILS_H

@@ -74,6 +74,7 @@ MLIRBench::MLIRBench(mlir::Operation *op, const MLIRBenchConfig &config)
   ctx->getOrLoadDialect<perf::PerfDialect>();
   ctx->getOrLoadDialect<gpu::GPUDialect>();
   ctx->getOrLoadDialect<async::AsyncDialect>();
+  ctx->getOrLoadDialect<index::IndexDialect>();
 }
 
 LogicalResult MLIRBench::findKernel(StringRef name) {

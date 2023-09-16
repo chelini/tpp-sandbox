@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TPP/Dialect/Tpp/TppOps.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -120,8 +121,8 @@ FailureOr<SmallVector<int64_t>> getStaticStrides(Value value) {
   return strides;
 }
 
-std::pair<Value, Value> getPtrAndOffset(OpBuilder &builder, Value operand,
-                                        Location loc) {
+Value extractValuePtrFromMemRef(OpBuilder &builder, Value operand,
+                                Location loc) {
   auto memrefType = operand.getType().dyn_cast<MemRefType>();
   assert(memrefType && "Expect a memref value");
   MemRefType baseMemrefType = MemRefType::get({}, memrefType.getElementType());
@@ -134,14 +135,14 @@ std::pair<Value, Value> getPtrAndOffset(OpBuilder &builder, Value operand,
   Value alignedPointerAsIndex =
       builder.create<memref::ExtractAlignedPointerAsIndexOp>(loc, basePtrType,
                                                              operand);
-  Value alignedPointerAsI64 = builder.create<arith::IndexCastOp>(
-      loc, builder.getIntegerType(64), alignedPointerAsIndex);
+  Value valuePointer = builder.create<index::AddOp>(loc, alignedPointerAsIndex,
+                                                    meta.getOffset());
+  Value valuePoinnterAsI64 = builder.create<arith::IndexCastOp>(
+      loc, builder.getIntegerType(64), valuePointer);
   // TODO: non-POD will require an LLVMTypeConverter.
-  Value alignedPointer = builder.create<LLVM::IntToPtrOp>(
+  return builder.create<LLVM::IntToPtrOp>(
       loc, LLVM::LLVMPointerType::get(memrefType.getElementType()),
-      alignedPointerAsI64);
-  Value offset = meta.getOffset();
-  return std::make_pair(alignedPointer, offset);
+      valuePoinnterAsI64);
 }
 
 } // namespace utils

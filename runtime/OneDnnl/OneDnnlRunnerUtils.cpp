@@ -17,9 +17,8 @@
 #include <cassert>
 
 extern "C" void linalg_matmul_blas(size_t m, size_t n, size_t k, const float *A,
-                                   size_t offsetA, size_t lda, const float *B,
-                                   size_t offsetB, size_t ldb, float *C,
-                                   size_t offsetC, size_t ldc) {
+                                   size_t lda, const float *B, size_t ldb,
+                                   float *C, size_t ldc) {
   auto status = dnnl_sgemm('n', 'n', m, n, k, 1.0, A, lda, B, ldb, 1.0, C, ldc);
   assert(status == 0);
 }

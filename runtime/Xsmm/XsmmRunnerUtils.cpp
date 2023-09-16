@@ -57,43 +57,16 @@ static bool hasImplicitComputeDtypeUnary(const libxsmm_meltw_unary_type dtype) {
   }
 }
 
-namespace {
-// Definition of this struct should match with the definition used in
-// MemrefToLLVM pass.
-// https://mlir.llvm.org/doxygen/TypeConverter_8cpp_source.html#l00283,
-// we are using only alignedPtr and offset fields from the structure.
-typedef struct {
-  void *alignedPtr;
-  int64_t offset;
-} mlir_memref_descriptor_t;
-
-void *get_base_ptr(const libxsmm_datatype dType, void *alignedPtr,
-                   int64_t offset) {
-  if (dType == LIBXSMM_DATATYPE_F32) {
-    float *base_ptr = (float *)alignedPtr + offset;
-    return (void *)base_ptr;
-  } else if (dType == LIBXSMM_DATATYPE_BF16) {
-    bf16 *base_ptr = (bf16 *)alignedPtr + offset;
-    return (void *)base_ptr;
-  }
-  fprintf(stderr, "Unhandled data type in get_data_pointer_from_memref_desc:%d",
-          dType);
-  return nullptr;
-}
-
-} // namespace
-
 extern "C" void xsmm_gemm_invoke(const libxsmm_datatype dType, int64_t addr,
-                                 void *alignedPtrA, int64_t offsetA,
-                                 void *alignedPtrB, int64_t offsetB,
-                                 void *alignedPtrC, int64_t offsetC) {
+                                 void *alignedPtrA, void *alignedPtrB,
+                                 void *alignedPtrC) {
   libxsmm_xmmfunction sgemm;
   libxsmm_gemm_param gemm_param;
 
   // LIBXSMM col-major change A with B.
-  gemm_param.a.primary = get_base_ptr(dType, alignedPtrB, offsetB);
-  gemm_param.b.primary = get_base_ptr(dType, alignedPtrA, offsetA);
-  gemm_param.c.primary = get_base_ptr(dType, alignedPtrC, offsetC);
+  gemm_param.a.primary = alignedPtrB;
+  gemm_param.b.primary = alignedPtrA;
+  gemm_param.c.primary = alignedPtrC;
 
   sgemm.gemm = reinterpret_cast<libxsmm_gemmfunction>(addr);
   sgemm.gemm(&gemm_param);
@@ -218,12 +191,11 @@ xsmm_binary_dispatch(const libxsmm_meltw_binary_type op_type,
 }
 
 extern "C" void xsmm_unary_invoke(const libxsmm_datatype dType, int64_t addr,
-                                  void *alignedPtrIn, int64_t offsetIn,
-                                  void *alignedPtrOut, int64_t offsetOut) {
+                                  void *alignedPtrIn, void *alignedPtrOut) {
   libxsmm_meltw_unary_param param;
 
-  param.in.primary = get_base_ptr(dType, alignedPtrIn, offsetIn);
-  param.out.primary = get_base_ptr(dType, alignedPtrOut, offsetOut);
+  param.in.primary = alignedPtrIn;
+  param.out.primary = alignedPtrOut;
 
   libxsmm_meltwfunction_unary kernel =
       reinterpret_cast<libxsmm_meltwfunction_unary>(addr);
@@ -231,14 +203,13 @@ extern "C" void xsmm_unary_invoke(const libxsmm_datatype dType, int64_t addr,
 }
 
 extern "C" void xsmm_binary_invoke(const libxsmm_datatype dType, int64_t addr,
-                                   void *alignedPtrLhs, int64_t offsetLhs,
-                                   void *alignedPtrRhs, int64_t offsetRhs,
-                                   void *alignedPtrOut, int64_t offsetOut) {
+                                   void *alignedPtrLhs, void *alignedPtrRhs,
+                                   void *alignedPtrOut) {
   libxsmm_meltw_binary_param param;
 
-  param.in0.primary = get_base_ptr(dType, alignedPtrLhs, offsetLhs);
-  param.in1.primary = get_base_ptr(dType, alignedPtrRhs, offsetRhs);
-  param.out.primary = get_base_ptr(dType, alignedPtrOut, offsetOut);
+  param.in0.primary = alignedPtrLhs;
+  param.in1.primary = alignedPtrRhs;
+  param.out.primary = alignedPtrOut;
 
   libxsmm_meltwfunction_binary kernel =
       reinterpret_cast<libxsmm_meltwfunction_binary>(addr);
@@ -247,21 +218,19 @@ extern "C" void xsmm_binary_invoke(const libxsmm_datatype dType, int64_t addr,
 
 extern "C" void xsmm_unary_scalar_invoke(const libxsmm_datatype dType,
                                          int64_t addr, float input,
-                                         void *alignedOut, int64_t offsetOut) {
+                                         void *alignedOut) {
   libxsmm_meltwfunction_unary kernel =
       reinterpret_cast<libxsmm_meltwfunction_unary>(addr);
   libxsmm_meltw_unary_param param;
 
   param.in.primary = (void *)&input;
-  param.out.primary = get_base_ptr(dType, alignedOut, offsetOut);
+  param.out.primary = alignedOut;
   kernel(&param);
 }
 
 extern "C" void xsmm_brgemm_invoke(const libxsmm_datatype dType, int64_t addr,
-                                   void *alignedPtrA, int64_t offsetA,
-                                   void *alignedPtrB, int64_t offsetB,
-                                   void *alignedPtrC, int64_t offsetC,
-                                   int64_t numBatches) {
+                                   void *alignedPtrA, void *alignedPtrB,
+                                   void *alignedPtrC, int64_t numBatches) {
   libxsmm_xmmfunction sgemm;
   libxsmm_gemm_param gemm_param;
 
@@ -269,9 +238,9 @@ extern "C" void xsmm_brgemm_invoke(const libxsmm_datatype dType, int64_t addr,
   gemm_param.op.tertiary = (void *)&numBatchesVar;
 
   // LIBXSMM col-major change A with B.
-  gemm_param.a.primary = get_base_ptr(dType, alignedPtrB, offsetB);
-  gemm_param.b.primary = get_base_ptr(dType, alignedPtrA, offsetA);
-  gemm_param.c.primary = get_base_ptr(dType, alignedPtrC, offsetC);
+  gemm_param.a.primary = alignedPtrB;
+  gemm_param.b.primary = alignedPtrA;
+  gemm_param.c.primary = alignedPtrC;
 
   sgemm.gemm = reinterpret_cast<libxsmm_gemmfunction>(addr);
   sgemm.gemm(&gemm_param);
@@ -334,10 +303,9 @@ extern "C" int64_t xsmm_brgemm_dispatch(const libxsmm_datatype dtype, int64_t m,
 
 extern "C" void xsmm_fused_brgemm_invoke(const libxsmm_datatype dType,
                                          int64_t addr, void *alignedPtrA,
-                                         int64_t offsetA, void *alignedPtrB,
-                                         int64_t offsetB, void *alignedPtrC,
-                                         int64_t offsetC, void *alignedPtrD,
-                                         int64_t offsetD, int64_t numBatches) {
+                                         void *alignedPtrB, void *alignedPtrC,
+                                         void *alignedPtrD,
+                                         int64_t numBatches) {
   libxsmm_xmmfunction sgemm;
   libxsmm_gemm_ext_param gemm_param;
 
@@ -345,10 +313,10 @@ extern "C" void xsmm_fused_brgemm_invoke(const libxsmm_datatype dType,
   gemm_param.op.tertiary = (void *)&numBatchesVar;
 
   // LIBXSMM col-major change A with B.
-  gemm_param.a.primary = get_base_ptr(dType, alignedPtrB, offsetB);
-  gemm_param.b.primary = get_base_ptr(dType, alignedPtrA, offsetA);
-  gemm_param.c.primary = get_base_ptr(dType, alignedPtrC, offsetC);
-  gemm_param.d.primary = get_base_ptr(dType, alignedPtrD, offsetD);
+  gemm_param.a.primary = alignedPtrB;
+  gemm_param.b.primary = alignedPtrA;
+  gemm_param.c.primary = alignedPtrC;
+  gemm_param.d.primary = alignedPtrD;
 
   sgemm.gemm_ext = reinterpret_cast<libxsmm_gemmfunction_ext>(addr);
   sgemm.gemm_ext(&gemm_param);

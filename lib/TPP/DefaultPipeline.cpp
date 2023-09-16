@@ -197,6 +197,7 @@ private:
     pm.addPass(createConvertFuncToLLVMPass());
 
     pm.addNestedPass<func::FuncOp>(createArithToLLVMConversionPass());
+    pm.addPass(createConvertIndexToLLVMPass());
     pm.addNestedPass<func::FuncOp>(createCanonicalizerPass());
     pm.addNestedPass<func::FuncOp>(createCSEPass());
     pm.addPass(createReconcileUnrealizedCastsPass());

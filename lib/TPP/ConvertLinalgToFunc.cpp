@@ -34,15 +34,12 @@ static SmallVector<Type> extractGemmOperandTypes(OpBuilder &builder,
   results.push_back(indexType); // K
   results.push_back(LLVM::LLVMPointerType::get(
       operands[0].getType().cast<MemRefType>().getElementType())); // A
-  results.push_back(builder.getIndexType());                       // offset A
   results.push_back(indexType);                                    // lda
   results.push_back(LLVM::LLVMPointerType::get(
       operands[0].getType().cast<MemRefType>().getElementType())); // B
-  results.push_back(builder.getIndexType());                       // offset B
   results.push_back(indexType);                                    // ldb
   results.push_back(LLVM::LLVMPointerType::get(
       operands[0].getType().cast<MemRefType>().getElementType())); // C
-  results.push_back(builder.getIndexType());                       // offset C
   results.push_back(indexType);                                    // ldc
   return results;
 }
@@ -58,17 +55,14 @@ static SmallVector<Value> getGemmOperands(OpBuilder &builder, Location loc,
   results.push_back(m);
   results.push_back(n);
   results.push_back(k);
-  auto [ptrA, offsetA] = utils::getPtrAndOffset(builder, operands[0], loc);
+  Value ptrA = utils::extractValuePtrFromMemRef(builder, operands[0], loc);
   results.push_back(ptrA);
-  results.push_back(offsetA);
   results.push_back(m); // lda
-  auto [ptrB, offsetB] = utils::getPtrAndOffset(builder, operands[1], loc);
+  Value ptrB = utils::extractValuePtrFromMemRef(builder, operands[1], loc);
   results.push_back(ptrB);
-  results.push_back(offsetB);
   results.push_back(k); // ldb
-  auto [ptrC, offsetC] = utils::getPtrAndOffset(builder, operands[2], loc);
+  Value ptrC = utils::extractValuePtrFromMemRef(builder, operands[2], loc);
   results.push_back(ptrC);
-  results.push_back(offsetC);
   results.push_back(m); // ldc
   return results;
 }

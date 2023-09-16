@@ -162,6 +162,7 @@ createConvertPackUnpackOptimization();
 std::unique_ptr<OperationPass<func::FuncOp>> createFoldXsmmFlagsPass();
 std::unique_ptr<OperationPass<func::FuncOp>>
 createTileContractionReductionsPass();
+std::unique_ptr<OperationPass<ModuleOp>> createConvertLinalgToFuncPass();
 
 // Testing passes.
 void registerTestStructuralMatchers();

@@ -863,7 +863,7 @@ struct ZeroCopyRepl : public OpRewritePattern<memref::CopyOp> {
         continue;
       }
       // Other references to alloc without lock.
-      if (!zeroOp || (isa<memref::CopyOp>(op) && op != copyOp.getOperation()))
+      if (!zeroOp)
         return failure();
       // Release lock.
       if (isa<memref::CopyOp>(op) && op == copyOp.getOperation())

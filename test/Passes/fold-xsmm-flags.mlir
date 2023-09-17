@@ -263,14 +263,17 @@ func.func @replace_copy_with_zeros() {
   %alloc_0 = memref.alloc() : memref<32x64xf32>
   memref.copy %alloc, %alloc_0 : memref<32x64xf32> to memref<32x64xf32>
   %alloc_1 = memref.alloc() : memref<32x64xf32>
-  // Pattern rewriter seems to miss the newly created zero op and 
-  // seems to work on a frozer IR, thus we miss to fold the last copy.
-  // try with `walk`.
+  // Pattern rewriter misses the newly created zero op as it
+  // seems to work on a frozer IR, thus we miss the last two copies.
   memref.copy %alloc_0, %alloc_1 : memref<32x64xf32> to memref<32x64xf32>
+  %alloc_2 = memref.alloc() : memref<32x64xf32>
+  memref.copy %alloc_1, %alloc_2 : memref<32x64xf32> to memref<32x64xf32>
   return
 }
 
 // CHECK-LABEL: replace_copy_with_zeros
+// CHECK-COUNT-2: xsmm.unary zero
+// CHECK-COUNT-2: memref.copy
 
 // -----
 

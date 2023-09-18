@@ -43,14 +43,14 @@ struct ReplaceIterArgs : public OpRewritePattern<scf::ForOp> {
 
   void replaceIterArgs(PatternRewriter &rewriter, scf::ForOp outerFor,
                        scf::ForOp innerFor) const {
-    assert(outerFor.getNumIterOperands() == innerFor.getNumIterOperands() &&
+    assert(outerFor.getInitArgs().size() == innerFor.getInitArgs().size() &&
            "expect same number of iter args");
     Block *block = &(*innerFor.getRegion().begin());
-    for (auto it : llvm::zip_equal(outerFor.getIterOperands(),
+    for (auto it : llvm::zip_equal(outerFor.getIterOpOperands(),
                                    innerFor.getRegionIterArgs())) {
-      Value source = std::get<0>(it);
-      Value target = std::get<1>(it);
-      rewriter.replaceUsesWithIf(source, target, [&](OpOperand &use) {
+      auto &source = std::get<0>(it);
+      auto target = std::get<1>(it);
+      rewriter.replaceUsesWithIf(source.get(), target, [&](OpOperand &use) {
         return use.getOwner()->getBlock() == block;
       });
     }

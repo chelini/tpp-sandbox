@@ -46,7 +46,7 @@ struct ReplaceIterArgs : public OpRewritePattern<scf::ForOp> {
     assert(outerFor.getInitArgs().size() == innerFor.getInitArgs().size() &&
            "expect same number of iter args");
     Block *block = &(*innerFor.getRegion().begin());
-    for (auto it : llvm::zip_equal(outerFor.getIterOpOperands(),
+    for (auto it : llvm::zip_equal(outerFor.getInitArgsMutable(),
                                    innerFor.getRegionIterArgs())) {
       auto &source = std::get<0>(it);
       auto target = std::get<1>(it);
@@ -306,14 +306,8 @@ tileConsumer(RewriterBase &rewriter, TilingInterface consumer,
   assert(!tileSizes.empty() && "expect tile sizes to be non-empty");
   assert(canBeTiledWithCurrentSpec(consumer, tileSizes) &&
          "expect valid tile sizes");
-  auto tileSizeComputationFunction = [tileSizes](OpBuilder &builder,
-                                                 Operation *op) {
-    OpBuilder::InsertionGuard guard(builder);
-    return getValueOrCreateConstantIndexOp(builder, op->getLoc(), tileSizes);
-  };
-  auto options = scf::SCFTilingOptions().setTileSizeComputationFunction(
-      tileSizeComputationFunction);
 
+  auto options = scf::SCFTilingOptions().setTileSizes(tileSizes);
   FailureOr<scf::SCFTilingResult> tilingResult =
       scf::tileUsingSCFForOp(rewriter, consumer, options);
   return tilingResult;

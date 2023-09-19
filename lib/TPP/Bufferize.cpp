@@ -75,7 +75,6 @@ void Bufferize::runOnOperation() {
 
   // One-shot.
   bufferization::OneShotBufferizationOptions buffOpts;
-  buffOpts.allowReturnAllocs = true;
   buffOpts.bufferizeFunctionBoundaries = true;
   buffOpts.setFunctionBoundaryTypeConversion(
       bufferization::LayoutMapOption::IdentityLayoutMap);

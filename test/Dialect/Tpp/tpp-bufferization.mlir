@@ -1,4 +1,4 @@
-// RUN: tpp-opt %s -bufferize -split-input-file | FileCheck %s
+// RUN: tpp-opt %s -bufferize -buffer-deallocation-pipeline -split-input-file | FileCheck %s
 
 // CHECK-LABEL: func.func @tpp_tensor_add
 // CHECK-SAME: %[[ARG0:.+]]: memref<32x32xf32>, %[[ARG1:.+]]: memref<32x32xf32>

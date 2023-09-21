@@ -71,6 +71,7 @@ void Bufferize::runOnOperation() {
   OpPassManager passManager;
 
   // Pre-processing.
+  passManager.addPass(bufferization::createEmptyTensorEliminationPass());
   passManager.addPass(bufferization::createEmptyTensorToAllocTensorPass());
 
   // One-shot.

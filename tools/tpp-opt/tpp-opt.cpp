@@ -29,6 +29,7 @@
 #include "TPP/Dialect/Tpp/BufferizableOpInterfaceImpl.h"
 #include "TPP/Dialect/Tpp/TppDialect.h"
 #include "TPP/Dialect/Transform/LinalgXTransformOps.h"
+#include "TPP/Dialect/Xsmm/BufferizableOpInterfaceImpl.h"
 #include "TPP/Dialect/Xsmm/XsmmDialect.h"
 #include "TPP/Passes.h"
 
@@ -45,6 +46,7 @@ int main(int argc, char **argv) {
   mlir::check::registerBufferizableOpInterfaceExternalModels(registry);
   mlir::perf::registerBufferizableOpInterfaceExternalModels(registry);
   mlir::tpp::registerBufferizableOpInterfaceExternalModels(registry);
+  mlir::xsmm::registerBufferizableOpInterfaceExternalModels(registry);
   mlir::tpp::registerTestStructuralMatchers();
   mlir::tpp::registerTestForToForAllRewrite();
 

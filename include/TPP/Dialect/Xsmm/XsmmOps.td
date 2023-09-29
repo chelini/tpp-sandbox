@@ -18,6 +18,36 @@ def Xsmm2DMemRef : AnyTypeOf<[MemRefRankOf<[F32, BF16], [2]>]>;
 def Xsmm4DMemRef : AnyTypeOf<[MemRefRankOf<[F32, BF16], [4]>]>;
 
 //===----------------------------------------------------------------------===//
+// FusionOp
+//===----------------------------------------------------------------------===//
+
+def Xsmm_YieldOp : Xsmm_Op<"yield", [HasParent<"FusionOp">, 
+                                     Pure, Terminator]> {
+  let summary = [{ Yield for fusion op }];
+  let arguments = (ins Variadic<AnyType>:$results);
+  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+  let assemblyFormat =
+      [{  attr-dict ($results^ `:` type($results))? }];
+}
+
+def Xsmm_FusionOp : Xsmm_Op<"fusion", 
+                    [SingleBlockImplicitTerminator<"xsmm::YieldOp">, Pure]> {
+  let summary = "Fusion operation";
+  let description = [{
+    This operation is private to the compiler, so it is does not yet have
+    a specification.
+
+    Informally, this operation consists of a group of basic ops (represented as
+    a region attached to it). It serves as a hint to the backend that it is
+    beneficial to emit the contained ops into a single loop nest or kernel.
+  }];
+  
+  let regions = (region SizedRegion<1>:$fused_computation);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{ attr-dict `:` $fused_computation `->` type($result) }];
+}
+
+//===----------------------------------------------------------------------===//
 // TernaryOp
 //===----------------------------------------------------------------------===//
 

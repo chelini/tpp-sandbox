@@ -1,4 +1,4 @@
-// RUN: tpp-opt %s | tpp-opt | FileCheck %s
+// RUN: tpp-opt -allow-unregistered-dialect %s | tpp-opt -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: @xsmm_dialect
 func.func @xsmm_dialect(%arg0: memref<2x2xf32>,
@@ -69,6 +69,11 @@ func.func @xsmm_dialect(%arg0: memref<2x2xf32>,
 
   // CHECK: xsmm.binary.dispatch div
   %14 = xsmm.binary.dispatch div [3, 2, 1, 3, 2] flags = (none) data_type = f32
+
+  // CHECK-LABEL: xsmm.fusion
+  xsmm.fusion : { 
+    "important_dont_drop"() : () -> ()
+  }
   
   return
 }

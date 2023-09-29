@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TPP/Dialect/Tpp/TppOps.h"
+#include "TPP/Dialect/Xsmm/XsmmOps.h"
 #include "TPP/Passes.h"
 #include "TPP/TransformUtils.h"
 #include "TPP/Transforms.h"
@@ -901,6 +901,24 @@ static void fusePacksImpl(RewriterBase &rewriter, FunctionOpInterface func) {
   }
 }
 
+static void inlineVnniPack(RewriterBase &builder, func::FuncOp funcOp) {
+  funcOp->walk([&](tensor::PackOp packOp) {
+    if (packOp.getSourceType().getRank() == 2 &&
+        packOp.getDestType().getRank() == 3) {
+      builder.setInsertionPoint(packOp);
+      xsmm::FusionOp fusionOp =
+          builder.create<xsmm::FusionOp>(packOp.getLoc(), packOp.getDestType());
+      Region &region = fusionOp->getRegion(0);
+      Block *body = builder.createBlock(&region);
+      builder.setInsertionPointToStart(body);
+      Operation *newPackOp = builder.clone(*packOp.getOperation());
+      builder.create<xsmm::YieldOp>(packOp.getLoc(), newPackOp->getResults());
+      builder.replaceAllUsesWith(packOp->getResults(), fusionOp->getResults());
+      builder.eraseOp(packOp);
+    }
+  });
+}
+
 struct PackConsumerAndProducerFusion
     : PackConsumerAndProducerFusionBase<PackConsumerAndProducerFusion> {
   void runOnOperation() override {
@@ -911,7 +929,11 @@ struct PackConsumerAndProducerFusion
     // Patterns for scf.forall.
     RewritePatternSet patterns(ctx);
     linalgx::utils::populateScfForToForAllRewritePattern(patterns);
+    tpp::populateSimplifyPacking(patterns);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+
+    // Inline vnni packing into an xsmm.fusion.
+    inlineVnniPack(rewriter, getOperation());
   }
 };
 

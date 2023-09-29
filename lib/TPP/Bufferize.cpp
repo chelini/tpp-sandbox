@@ -78,6 +78,7 @@ void Bufferize::runOnOperation() {
   bufferization::OneShotBufferizationOptions buffOpts;
   buffOpts.allowReturnAllocs = true;
   buffOpts.bufferizeFunctionBoundaries = true;
+  // buffOpts.allowUnknownOps = true;
   buffOpts.setFunctionBoundaryTypeConversion(
       bufferization::LayoutMapOption::IdentityLayoutMap);
   bool runOnlyAnalysis = this->testAnalysisOnly || this->printConflicts;

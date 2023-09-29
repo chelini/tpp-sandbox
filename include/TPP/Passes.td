@@ -227,7 +227,7 @@ def TileConsumerAndFuseProducers : Pass<"tile-consumer-and-fuse-producers",
     Option<"useForAll", "use-for-all", "bool", "true", "Use parallel forAll">
   ];
   let dependentDialects = ["linalg::LinalgDialect", "scf::SCFDialect",
-                           "tensor::TensorDialect", "tpp::TppDialect"];
+                           "tensor::TensorDialect", "xsmm::XsmmDialect"];
 }
 
 def PackConsumerAndProducerFusion : Pass<"fuse-pack-consumer-producer",

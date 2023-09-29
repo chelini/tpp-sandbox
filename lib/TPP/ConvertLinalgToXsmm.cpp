@@ -593,6 +593,21 @@ struct ConvertGenericToBrgemm : public OpRewritePattern<linalg::GenericOp> {
   }
 };
 
+struct ConvertGenericToVnniBrgemm : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
+                                PatternRewriter &rewriter) const override {
+    // TODO: we need to find a way to handle VNNI using the contractionOp
+    // interface. It is tricky to do due to floordiv and constant in the map.
+    // [i, j] -> [b, i, k] [b, k/2, j, 2]
+    // Test failing:
+    // BF16/Integration/mlp-all.mlir
+    // BF16/Integration/tpp-run-splat-shape.mlir
+    return failure();
+  }
+};
+
 // Emit a transpose operation for `operand` by swapping `dim` with `newDim`.
 // Emit a transpose operation for `operand` by swapping the dimensions at index
 // `dim` with `newDim`.
@@ -818,12 +833,12 @@ struct ConvertBatchReduceMatmulToBatchReduceMatmul
 } // namespace
 
 void mlir::tpp::populateLinalgToXsmmPatterns(RewritePatternSet &patterns) {
-  patterns
-      .add<ConvertFillOpToUnaryZero, ConvertTransposeOpToUnaryTranspose,
-           ConvertGenericToUnaryRelu, ConvertGenericToBinaryAdd,
-           ConvertGenericToBrgemm, ConvertBatchReduceMatmulToBatchReduceMatmul,
-           ConvertMatmulToMatmul, ConvertGenericToUnaryIdentity>(
-          patterns.getContext());
+  patterns.add<ConvertFillOpToUnaryZero, ConvertTransposeOpToUnaryTranspose,
+               ConvertGenericToUnaryRelu, ConvertGenericToBinaryAdd,
+               ConvertGenericToBrgemm, ConvertGenericToVnniBrgemm,
+               ConvertBatchReduceMatmulToBatchReduceMatmul,
+               ConvertMatmulToMatmul, ConvertGenericToUnaryIdentity>(
+      patterns.getContext());
 }
 
 std::unique_ptr<OperationPass<func::FuncOp>>

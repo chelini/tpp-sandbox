@@ -279,3 +279,23 @@ func.func @simple_brgemm(%arg0: memref<2x32x32xf32>, %arg1: memref<2x32x32xf32>,
 // CHECK: %[[C2:.+]] = arith.constant 2 : i64
 // CHECK: %[[DIS:.+]] = xsmm.brgemm.dispatch [32, 32, 32, 32, 32, 32, 1024, 1024] flags = (none) data_type = f32
 // CHECK: xsmm.brgemm(data_type = f32, %[[DIS]], %[[ARG0]], %[[ARG1]], %[[ARG2]], %[[C2]])
+
+// -----
+
+#map = affine_map<(d0, d1, d2, d3, d4) -> (d0, d2, d4)>
+#map1 = affine_map<(d0, d1, d2, d3, d4) -> (d0, d4 floordiv 2, d3, d1)>
+#map2 = affine_map<(d0, d1, d2, d3, d4) -> (d2, d3)>
+
+func.func @vnni_brgemm(%arg0: memref<8x8x8xbf16>, %arg1: memref<8x4x8x2xbf16>, %arg2: memref<8x8xbf16>) {
+  linalg.generic {
+    indexing_maps = [#map, #map1, #map2], 
+                    iterator_types = ["reduction", "reduction", "parallel", "parallel", "reduction"]} 
+    ins(%arg0, %arg1 : memref<8x8x8xbf16>, memref<8x4x8x2xbf16>) 
+    outs(%arg2 : memref<8x8xbf16>) {
+      ^bb0(%in: bf16, %in_8: bf16, %out: bf16):
+        %10 = arith.mulf %in, %in_8 : bf16
+        %11 = arith.addf %out, %10 : bf16
+        linalg.yield %11 : bf16
+  }
+  return
+}

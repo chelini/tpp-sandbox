@@ -92,7 +92,6 @@ std::unique_ptr<OperationPass<func::FuncOp>>
 createConvertLinalgToTppPass(bool, bool, ArrayRef<int64_t> tiles = {});
 std::unique_ptr<OperationPass<func::FuncOp>>
 createConvertTppToLoopsPass(bool parallel = false);
-std::unique_ptr<OperationPass<ModuleOp>> createConvertXsmmToFuncPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createConvertCheckToLoopsPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createConvertVNNIToTppPass();
 std::unique_ptr<OperationPass<func::FuncOp>> createConvertTppToXsmmPass();
@@ -177,7 +176,17 @@ std::unique_ptr<OperationPass<func::FuncOp>> createLinalgDeGeneralizationPass();
 } // namespace linalg
 } // namespace mlir
 
+namespace mlir {
+namespace tpp {
+// TODO: This should be per-pass so that pass can live
+// in their namespace (xsmm, check...). All the passes
+// are now in tpp.
+#define GEN_PASS_DECL
+#include "TPP/Passes.h.inc"
+
 #define GEN_PASS_REGISTRATION
 #include "TPP/Passes.h.inc"
+} // namespace tpp
+} // namespace mlir
 
 #endif // TPP_PASSES_H

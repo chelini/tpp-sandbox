@@ -20,13 +20,16 @@
 using namespace mlir;
 using namespace mlir::xsmm;
 
-#define GEN_PASS_CLASSES
-#include "TPP/Passes.h.inc"
-
 // NOTE: The ordering of operands to XSMM function calls as it is defined here
 // is strictly followed by XsmmRunnerUtils for XSMM calls. Please change
 // the ordering of the fields in XsmmRunnerUtils for any such change in this
 // file.
+namespace mlir {
+namespace tpp {
+#define GEN_PASS_DEF_CONVERTXSMMTOFUNC
+#include "TPP/Passes.h.inc"
+} // namespace tpp
+} // namespace mlir
 
 namespace {
 
@@ -412,8 +415,11 @@ struct ConvertFusedBrgemmOp : public OpRewritePattern<FusedBrgemmDispatchOp> {
   }
 };
 
-struct ConvertXsmmToFunc : public ConvertXsmmToFuncBase<ConvertXsmmToFunc> {
-  ConvertXsmmToFunc() = default;
+struct ConvertXsmmToFunc
+    : public tpp::impl::ConvertXsmmToFuncBase<ConvertXsmmToFunc> {
+  using tpp::impl::ConvertXsmmToFuncBase<
+      ConvertXsmmToFunc>::ConvertXsmmToFuncBase;
+
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     tpp::populateXsmmToFuncPatterns(patterns);
@@ -432,9 +438,4 @@ void mlir::tpp::populateXsmmToFuncPatterns(RewritePatternSet &patterns) {
                ConvertUnaryDispatchOp, ConvertGemmDispatchOp,
                ConvertBrgemmDispatchOp, ConvertFusedBrgemmOp>(
       patterns.getContext());
-}
-
-std::unique_ptr<OperationPass<ModuleOp>>
-mlir::tpp::createConvertXsmmToFuncPass() {
-  return std::make_unique<ConvertXsmmToFunc>();
 }

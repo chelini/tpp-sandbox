@@ -146,6 +146,7 @@ DiagnosedSilenceableFailure transform::PackingPropagationOp::applyToOne(
   tensor::populateSimplifyTensorPack(patterns);
   tensor::PackOp::getCanonicalizationPatterns(patterns, ctx);
   tensor::UnPackOp::getCanonicalizationPatterns(patterns, ctx);
+  tpp::populateSimplifyPacking(patterns);
 
   // TODO: (lorenzo): Use `transform.apply_patterns` so that we can avoi
   // all this tracking issues. See `ApplyCastAwayVectorLeadingOneDimPatternsOp`

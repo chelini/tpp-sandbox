@@ -733,6 +733,30 @@ struct SimplifyPackToEmpty : public OpRewritePattern<tensor::PackOp> {
   }
 };
 
+//  %unpack = tensor.unpack %arg0 into %arg1
+//    : tensor<4x8x32x32xf32> -> tensor<128x256xf32>
+//  %unpack_1 = tensor.unpack %some_op into %unpack
+//    : tensor<4x8x32x32xf32> -> tensor<128x256xf32>
+//    -->
+//  %unpack_1 = tensor.unpack %some_op into %arg1
+//  Note that `unpack` should have a single use from the second unpack.
+struct FoldUnpackOfUnpack : public OpRewritePattern<tensor::UnPackOp> {
+  using OpRewritePattern<tensor::UnPackOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tensor::UnPackOp unpackOp,
+                                PatternRewriter &rewriter) const override {
+    Value dest = unpackOp.getDest();
+    tensor::UnPackOp producerUnPack = dest.getDefiningOp<tensor::UnPackOp>();
+    if (!producerUnPack || !producerUnPack.getResult().hasOneUse())
+      return failure();
+    rewriter.replaceOpWithNewOp<tensor::UnPackOp>(
+        unpackOp, unpackOp.getSource(), producerUnPack.getDest(),
+        unpackOp.getInnerDimsPos(), unpackOp.getMixedTiles(),
+        unpackOp.getOuterDimsPerm());
+    return success();
+  }
+};
+
 // If all the tiled dimension create unit tile loops pack can be rewritten as
 // a reshape.
 struct PackAsReshape : public OpRewritePattern<tensor::PackOp> {
@@ -866,7 +890,7 @@ void mlir::tpp::populateSimplifyPacking(RewritePatternSet &patterns) {
   ctx->getLoadedDialect<tensor::TensorDialect>()->getCanonicalizationPatterns(
       patterns);
   patterns.add<SimplifyPackToEmpty, PackAsReshape, PackOfReshape,
-               FoldExpandShapeInParallelInsertOp>(ctx);
+               FoldExpandShapeInParallelInsertOp, FoldUnpackOfUnpack>(ctx);
   tensor::populateReassociativeReshapeFoldingPatterns(patterns);
 }
 

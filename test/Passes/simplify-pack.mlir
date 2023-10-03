@@ -175,3 +175,20 @@ func.func @vnni_pack(%arg0: tensor<1024x512xbf16>, %arg1: tensor<16x32x16x32x2xb
 // CHECK: %[[EMPTY:.+]] = tensor.empty() : tensor<16x32x2xbf16>
 // CHECK: %[[PACK:.+]] = tensor.pack %[[SLICE]] inner_dims_pos = [0] inner_tiles = [2] into %[[EMPTY]] 
 // CHECK-SAME:  : tensor<32x32xbf16> -> tensor<16x32x2xbf16>
+
+// -----
+
+func.func @unpack_of_unpack(%arg0: tensor<4x8x32x32xf32>, %arg1: tensor<128x256xf32>, %some_op: tensor<4x8x32x32xf32>) 
+  -> tensor<128x256xf32> {
+  %unpack = tensor.unpack %arg0 inner_dims_pos = [0, 1] inner_tiles = [32, 32] into %arg1 
+    : tensor<4x8x32x32xf32> -> tensor<128x256xf32>
+  %unpack_1 = tensor.unpack %some_op inner_dims_pos = [0, 1] inner_tiles = [32, 32] into %unpack 
+    : tensor<4x8x32x32xf32> -> tensor<128x256xf32> 
+  return %unpack_1 : tensor<128x256xf32>
+}
+
+// CHECK-LABEL: unpack_of_unpack
+// CHECK-SAME: %[[ARG0:.+]]: tensor<4x8x32x32xf32>, %[[ARG1:.+]]: tensor<128x256xf32>, %[[ARG2:.+]]: tensor<4x8x32x32xf32>
+// CHECK: %[[UNPACK:.+]] = tensor.unpack %[[ARG2]] inner_dims_pos = [0, 1] inner_tiles = [32, 32] into %[[ARG1]] 
+// CHECK-SAME:  : tensor<4x8x32x32xf32> -> tensor<128x256xf32>
+// CHECK: return %[[UNPACK]] : tensor<128x256xf32>

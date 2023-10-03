@@ -1,15 +1,15 @@
-// RUN: tpp-opt -pack-unpack-optimization -generalize-tensor-pack-unpack -bufferize -convert-memref-to-xsmm %s --split-input-file | FileCheck %s
+// RUN: tpp-opt -generalize-tensor-pack-unpack -bufferize -convert-memref-to-xsmm %s --split-input-file | FileCheck %s
 
 func.func @pack1(%in: tensor<4x4xf32>, %out: tensor<2x2x2x2xf32>) ->  tensor<2x2x2x2xf32> {
   %1 = tensor.pack %in inner_dims_pos = [0, 1] inner_tiles = [2,2] into %out : tensor<4x4xf32> -> tensor<2x2x2x2xf32>
   return %1 : tensor<2x2x2x2xf32>
 }
 
-// CHECK: func.func @pack1(%[[ARG1:.+]]: memref<4x4xf32>, %[[ARG1:.+]]: memref<2x2x2x2xf32>) {
-// CHECK: scf.for
-// CHECK:  scf.for
-// CHECK:    %[[DISPATCH:.+]] = xsmm.unary.dispatch identity [2, 2, 4, 2] flags = (none) data_type = f32 
-// CHECK:    xsmm.unary identity(data_type = f32, %[[DISPATCH]], %{{[^:]+}}, {{[^:]+}}) : (i64, memref<2x2xf32, strided<[4, 1], offset: ?>>, memref<2x2xf32, strided<[2, 1], offset: ?>>) -> ()
+// CHECK: func.func @pack1(%[[ARG0:.+]]: memref<4x4xf32>, %[[ARG1:.+]]: memref<2x2x2x2xf32>) {
+// CHECK: %[[EXP:.+]] = memref.expand_shape %[[ARG0]] {{\[}}[0, 1], [2, 3]] 
+// CHECK-SAME:  : memref<4x4xf32> into memref<2x2x2x2xf32>
+// CHECK: linalg.transpose ins(%[[EXP]] : memref<2x2x2x2xf32>) outs(%[[ARG1]] : memref<2x2x2x2xf32>) 
+// CHECK-SAME:  permutation = [0, 2, 1, 3]
 
 // -----
 
@@ -19,12 +19,11 @@ func.func @pack2(%0: tensor<1x2x2x4xf32>, %1:  tensor<1x2x2x2x2xf32>) -> tensor<
 }
 
 // CHECK: func.func @pack2(%[[ARG0:.+]]: memref<1x2x2x4xf32>, %[[ARG1:.+]]: memref<1x2x2x2x2xf32>) {
-// CHECK: scf.for
-// CHECK:   scf.for
-// CHECK:     scf.for
-// CHECK:      memref.subview
-// CHECK:      memref.subview
-// CHECK:      memref.copy 
+// CHECK: %[[EXP:.+]] = memref.expand_shape %[[ARG0]] {{\[}}[0], [1], [2], [3, 4]] 
+// CHECK-SAME:  : memref<1x2x2x4xf32> into memref<1x2x2x2x2xf32> 
+// CHECK: linalg.transpose ins(%[[EXP]] : memref<1x2x2x2x2xf32>) outs(%[[ARG1]] : memref<1x2x2x2x2xf32>) 
+// CHECK-SAME:  permutation = [0, 3, 1, 2, 4]
+
 // -----
 
 func.func @pack3(%in: tensor<8x2x2x2xf32>, %out: tensor<2x2x1x4x2x2xf32>)-> tensor<2x2x1x4x2x2xf32>{
@@ -46,10 +45,11 @@ func.func @unpack1(%in: tensor<2x2x2x2xf32>, %out: tensor<4x4xf32>) ->  tensor<4
 }
 
 // CHECK: func.func @unpack1(%[[ARG1:.+]]: memref<2x2x2x2xf32>, %[[ARG1:.+]]: memref<4x4xf32>) {
-// CHECK: scf.for
-// CHECK:  scf.for
-// CHECK:    %[[DISPATCH:.+]] = xsmm.unary.dispatch identity [2, 2, 2, 4] flags = (none) data_type = f32
-// CHECK:    xsmm.unary identity(data_type = f32, %[[DISPATCH]], %{{[^:]+}}, {{[^:]+}}) : (i64, memref<2x2xf32, strided<[2, 1], offset: ?>>, memref<2x2xf32, strided<[4, 1], offset: ?>>) -> ()
+// CHECK: %[[ALLOC:.+]] = memref.alloc() {alignment = 64 : i64} : memref<2x2x2x2xf32>
+// CHECK: linalg.transpose ins(%[[ARG0]] : memref<2x2x2x2xf32>) outs(%[[ALLOC]] : memref<2x2x2x2xf32>) 
+// CHECK-SAME:  permutation = [0, 2, 1, 3]
+// CHECK: %[[CLP:.+]] = memref.collapse_shape %[[ALLOC]] {{\[}}[0, 1], [2, 3]] : memref<2x2x2x2xf32> into memref<4x4xf32>
+// CHECK: linalg.copy ins(%[[CLP]] : memref<4x4xf32>) outs(%[[ARG1]] : memref<4x4xf32>)
 
 // -----
 

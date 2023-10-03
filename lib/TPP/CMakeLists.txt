@@ -44,7 +44,6 @@ add_mlir_library(MLIRTPP
     ConvertCheckToLoops.cpp
     ConvertPerfToLoops.cpp
     ConvertPerfToFunc.cpp
-    ConvertPackUnpackOptimization.cpp
     ConvertLinalgToFunc.cpp
 
   # Test Passes

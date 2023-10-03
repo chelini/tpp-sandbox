@@ -383,7 +383,6 @@ private:
       pm.addPass(createTppMappingPass());
 
       // Generalize tensor.pack and tensor.unpack.
-      // pm.addPass(createConvertPackUnpackOptimization());
       pm.addPass(createGeneralizeTensorPackAndUnPackPass());
       pm.addNestedPass<func::FuncOp>(createCleanupPass());
 

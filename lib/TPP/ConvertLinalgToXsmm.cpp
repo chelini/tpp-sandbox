@@ -817,8 +817,8 @@ struct ConvertBatchReduceMatmulToBatchReduceMatmul
   }
 };
 
-// Convert a vnni pack to xsmm identity. It assumes the pack to be decomposed
-// as an expand.shape + linalg.transpose.
+// Convert a vnni pack to xsmm norm to vnni op. It assumes the pack to be
+// decomposed as an expand.shape + linalg.transpose.
 struct ConvertVnniPacking : public OpRewritePattern<linalg::TransposeOp> {
   using OpRewritePattern<linalg::TransposeOp>::OpRewritePattern;
 
@@ -849,9 +849,9 @@ struct ConvertVnniPacking : public OpRewritePattern<linalg::TransposeOp> {
     if (failed(unaryInfo))
       return failure();
     auto flags = rewriter.getArrayAttr(xsmm::UnaryFlagsAttr::get(
-        rewriter.getContext(), xsmm::UnaryFlags::VNNI2));
-    xsmm::UnaryKindAttr kind = xsmm::UnaryKindAttr::get(
-        rewriter.getContext(), xsmm::UnaryKind::IDENTITY);
+        rewriter.getContext(), xsmm::UnaryFlags::NONE));
+    xsmm::UnaryKindAttr kind =
+        xsmm::UnaryKindAttr::get(rewriter.getContext(), xsmm::UnaryKind::VNNI2);
     xsmm::utils::replaceOpWithUnary(rewriter, transposeOp, {source, out},
                                     *unaryInfo, flags, kind);
     return success();

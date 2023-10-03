@@ -45,7 +45,8 @@ def Xsmm_UnaryKind : I64EnumAttr<
       I64EnumAttrCase<"IDENTITY", 1, "identity">,
       I64EnumAttrCase<"ZERO", 2, "zero">,
       I64EnumAttrCase<"RELU", 5, "relu">,
-      I64EnumAttrCase<"TRANSPOSE", 29, "transpose">
+      I64EnumAttrCase<"TRANSPOSE", 29, "transpose">,
+      I64EnumAttrCase<"VNNI2", 28, "vnni_2">
     ]> {
   let cppNamespace = "mlir::xsmm";
 }
@@ -56,8 +57,7 @@ def Xsmm_UnaryFlags : I64EnumAttr<
       I64EnumAttrCase<"NONE", 0, "none">,
       I64EnumAttrCase<"BCAST_ROW", 2, "bcast_row">,
       I64EnumAttrCase<"BCAST_COL", 4, "bcast_col">,
-      I64EnumAttrCase<"BCAST_SCALAR", 8, "bcast_scalar">,
-      I64EnumAttrCase<"VNNI2", 28, "vnni_2">
+      I64EnumAttrCase<"BCAST_SCALAR", 8, "bcast_scalar">
     ]> {
   let cppNamespace = "mlir::xsmm";
 }

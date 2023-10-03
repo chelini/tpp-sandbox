@@ -308,5 +308,5 @@ func.func @vnni_packing(%arg0 : memref<32x32xbf16, strided<[512, 1], offset: ?>>
 // CHECK-LABEL: vnni_packing
 // CHECK-SAME:  %[[ARG0:.+]]: memref<32x32xbf16, strided<[512, 1], offset: ?>>, 
 // CHECK-SAME:  %[[ARG1:.+]]: memref<16x32x2xbf16, strided<[64, 2, 1], offset: ?>>
-// CHECK: %[[DIS:.+]] = xsmm.unary.dispatch identity [32, 32, 512, 512] flags = (vnni_2) data_type = bf16
-// CHECK: xsmm.unary identity(data_type = bf16, %[[DIS]], %[[ARG0]], %[[ARG1]])
+// CHECK: %[[DIS:.+]] = xsmm.unary.dispatch vnni_2 [32, 32, 512, 512] flags = (none) data_type = bf16
+// CHECK: xsmm.unary vnni_2(data_type = bf16, %[[DIS]], %[[ARG0]], %[[ARG1]])

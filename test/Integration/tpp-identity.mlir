@@ -1,8 +1,7 @@
-// This should really be in the passes directory, not here
-// RUN: tpp-opt %s -canonicalize -convert-linalg-to-tpp | FileCheck -check-prefix=TPP %s
+// RUN: tpp-run %s -linalg-to-xsmm -print-mlir=late \
+// RUN:  -e entry -entry-point-result=void
 
-// We don't need to print because we use the check dialect
-// RUN: tpp-run %s -linalg-to-xsmm -print \
+// RUN: tpp-run %s -print-mlir=late \
 // RUN:  -e entry -entry-point-result=void
 
 // RUN: tpp-run %s -tpp-to-loops -print \
@@ -19,7 +18,7 @@ func.func @entry(){
   %cst = arith.constant 23.0 : f32
   %input_tensor = linalg.fill ins(%cst : f32) outs(%init_source : tensor<64xf32>) -> tensor<64xf32>
   %1 = tensor.empty() : tensor<56x64xf32>
-  // TPP: tpp.identity
+  // CHECK: xsmm_identity_invoke
   %2 = linalg.generic {indexing_maps=[#map, #map1],
                        iterator_types = ["parallel", "parallel"]}
     ins(%input_tensor : tensor<64xf32> ) outs(%1 : tensor<56x64xf32>) {

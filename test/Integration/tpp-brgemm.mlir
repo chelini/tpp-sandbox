@@ -10,9 +10,23 @@
 // RUN:  -e entry -entry-point-result=void | \
 // RUN: FileCheck %s
 
+// RUN: tpp-run %s -linalg-to-xsmm \
+// RUN:  -e entry -entry-point-result=void -print | \
+// RUN: FileCheck %s
+
+// RUN: tpp-opt %s -default-tpp-passes="linalg-to-xsmm" | \
+// RUN: FileCheck %s -check-prefix=IR
+
+// RUN: tpp-opt %s -default-tpp-passes | \
+// RUN: FileCheck %s -check-prefix=IR
+
+// IR-LABEL: brgemm_tpp
 func.func @brgemm_tpp(%A: tensor<1x4x8xf32>,
                      %B: tensor<1x8x4xf32>, %C: tensor<4x4xf32>) -> tensor<4x4xf32>  {
-  %D = linalg.batch_reduce_matmul ins(%A, %B: tensor<1x4x8xf32>, tensor<1x8x4xf32>) outs(%C: tensor<4x4xf32>) -> tensor<4x4xf32>
+  // This is actually a GEMM, the batch size is 1.
+  // IR: xsmm_gemm_invoke
+  %D = linalg.batch_reduce_matmul ins(%A, %B: tensor<1x4x8xf32>, tensor<1x8x4xf32>) 
+                                  outs(%C: tensor<4x4xf32>) -> tensor<4x4xf32>
   return %D: tensor<4x4xf32>
 }
 

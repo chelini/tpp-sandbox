@@ -1,6 +1,3 @@
-// This should really be in the passes directory, not here
-// RUN: tpp-opt %s -convert-linalg-to-tpp | FileCheck %s
-
 // RUN: tpp-run %s -tpp-to-loops -print \
 // RUN:  -e entry -entry-point-result=void | \
 // RUN: FileCheck %s -check-prefix=EXE
@@ -13,6 +10,16 @@
 // RUN: tpp-run %s -print \
 // RUN:  -e entry -entry-point-result=void | \
 // RUN: FileCheck %s -check-prefix=EXE
+
+// RUN: tpp-run %s -linalg-to-xsmm -print \
+// RUN:  -e entry -entry-point-result=void | \
+// RUN: FileCheck %s -check-prefix=EXE
+
+// RUN: tpp-opt %s -default-tpp-passes="linalg-to-xsmm" | \
+// RUN: FileCheck %s -check-prefix=IR
+
+// RUN: tpp-opt %s -default-tpp-passes | \
+// RUN: FileCheck %s -check-prefix=IR
 
 func.func private @generate_1D_source(%init_source : tensor<?xf32>) -> tensor<?xf32> {
   %0 = linalg.generic {
@@ -28,6 +35,7 @@ func.func private @generate_1D_source(%init_source : tensor<?xf32>) -> tensor<?x
   return %0 : tensor<?xf32>
 }
 
+// IR-LABEL: entry
 func.func @entry() {
   %arg0 = tensor.empty() : tensor<56x32xf32>
   %arg2 = tensor.empty() : tensor<1x2x56x56x32xf32>
@@ -37,6 +45,7 @@ func.func @entry() {
   %c2 = arith.constant 2 : index
   %c56 = arith.constant 56 : index
   %c1_cst = arith.constant 1.0 : f32
+  %c0_cts = arith.constant 0.0 : f32
   %c32 = arith.constant 32 : index
 
   %seed = tensor.empty(%c32) : tensor<?xf32>
@@ -50,13 +59,14 @@ func.func @entry() {
   %3 = scf.for %arg3 = %c0 to %c2 step %c1 iter_args(%ia1 = %out_shape) -> (tensor<1x2x56x56x32xf32>) {
     %4 = scf.for %arg4 = %c0 to %c56 step %c1 iter_args(%ia2 = %ia1) -> (tensor<1x2x56x56x32xf32>) {
       %out_slice = tensor.empty() : tensor<56x32xf32>
-      // CHECK: tpp.add
+      %fill = linalg.fill ins(%c0_cts : f32) outs(%out_slice : tensor<56x32xf32>) -> tensor<56x32xf32>
+      // IR: xsmm_binary_invoke
       %res = linalg.generic {
       indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>, 
                        affine_map<(d0, d1) -> (d0, d1)>], 
       iterator_types = ["parallel", "parallel"]}
       ins(%b0, %b0 : tensor<56x32xf32>, tensor<56x32xf32>)
-      outs(%out_slice : tensor<56x32xf32>) {
+      outs(%fill : tensor<56x32xf32>) {
         ^bb0(%in: f32, %in_0: f32, %out: f32):
           %0 = arith.addf %in, %in_0 : f32
           linalg.yield %0 : f32

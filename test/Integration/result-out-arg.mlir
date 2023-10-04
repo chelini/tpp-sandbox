@@ -8,8 +8,9 @@
 
 func.func @gemm_tpp(%A: memref<2x2xf32>,
           %B: memref<2x2xf32>, %C: memref<2x2xf32>)  {
-  linalg.generic {indexing_maps = [#map0, #map1, #map2],
-                         iterator_types = ["parallel", "parallel", "reduction"]}
+  linalg.generic {
+    indexing_maps = [#map0, #map1, #map2],
+    iterator_types = ["parallel", "parallel", "reduction"]}
     ins(%A, %B: memref<2x2xf32>, memref<2x2xf32>) outs(%C: memref<2x2xf32>) {
         ^bb0(%a: f32, %b: f32, %c: f32):
           %0 = arith.mulf %a, %b : f32

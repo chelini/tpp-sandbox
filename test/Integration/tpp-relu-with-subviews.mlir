@@ -1,6 +1,3 @@
-// This should really be in the passes directory, not here
-// RUN: tpp-opt %s -convert-linalg-to-tpp | FileCheck -check-prefix=TPP %s
-
 // We don't need to print because we use the check dialect
 // RUN: tpp-run %s \
 // RUN:  -e entry -entry-point-result=void
@@ -10,6 +7,12 @@
 
 // RUN: tpp-run %s -linalg-to-loops -print \
 // RUN:  -e entry -entry-point-result=void
+
+// RUN: tpp-opt %s -default-tpp-passes="linalg-to-xsmm" | \
+// RUN: FileCheck %s -check-prefix=IR
+
+// RUN: tpp-opt %s -default-tpp-passes | \
+// RUN: FileCheck %s -check-prefix=IR
 
 #map = affine_map<(d0) -> (d0)>
 #map1 = affine_map<(d0, d1, d2, d3, d4) -> (d4)>
@@ -28,6 +31,7 @@ func.func private @generate_1D_source(%buff: tensor<?xf32>) -> tensor<?xf32> {
   return %0 : tensor<?xf32>
 }
 
+// IR-LABEL: entry
 func.func @entry() {
   %cst = arith.constant 32: index
   %c0 = arith.constant 0: index
@@ -53,7 +57,7 @@ func.func @entry() {
       %3 = scf.for %arg5 = %c0 to %c56 step %c1 iter_args(%ia3 = %ia2) -> tensor<12x2x56x56x32xf32> {
         %extracted_slice = tensor.extract_slice %ia3[%arg3, %arg4, %arg5, 0, 0] [1, 1, 1, 56, 32] [1, 1, 1, 1, 1]
           : tensor<12x2x56x56x32xf32> to tensor<56x32xf32>
-        // TPP: tpp.relu
+        // IR: xsmm_unary_invoke 
         %4 = linalg.generic {indexing_maps = [#map3], iterator_types = ["parallel", "parallel"]} outs(%extracted_slice : tensor<56x32xf32>) {
           ^bb0(%out: f32):
             %5 = arith.maximumf %out, %cf : f32

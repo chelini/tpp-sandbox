@@ -869,13 +869,15 @@ struct ConvertVnniPacking : public OpRewritePattern<linalg::TransposeOp> {
   }
 };
 
+// Convert a linalg.generic that represents a VNNI brgemm operation to a call
+// to xsmm.brgemm op.
 struct ConvertGenericToVnniBrgemm : public OpRewritePattern<linalg::GenericOp> {
   using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
     if (!genericOp.hasBufferSemantics() ||
-        !tpp::utils::isTppVnniOp(genericOp, /*captures=*/nullptr)) {
+        !tpp::utils::isBrgemmVnniOp(genericOp, /*captures=*/nullptr)) {
       return failure();
     }
     Value bufferA = genericOp.getDpsInputs()[0];

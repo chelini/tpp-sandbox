@@ -21,9 +21,7 @@ add_mlir_library(MLIRTPP
     CombineTpp.cpp
     RewriteBatchMatmulToMatmul.cpp
     LinalgDeGeneralize.cpp
-    ConvertMemRefToXsmm.cpp
     DefaultPipeline.cpp
-    ConvertLinalgToXsmm.cpp
     DecomposeAggregatedOps.cpp
 
   # Utils
@@ -37,7 +35,9 @@ add_mlir_library(MLIRTPP
     VNNIUtils.cpp
 
   # Conversions
+    ConvertMemRefToXsmm.cpp
     ConvertLinalgToTpp.cpp
+    ConvertLinalgToXsmm.cpp
     ConvertTppToLoops.cpp
     ConvertTppToXsmm.cpp
     ConvertXsmmToFunc.cpp

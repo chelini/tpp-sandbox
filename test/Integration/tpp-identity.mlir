@@ -2,7 +2,7 @@
 // RUN: tpp-opt %s -canonicalize -convert-linalg-to-tpp | FileCheck -check-prefix=TPP %s
 
 // We don't need to print because we use the check dialect
-// RUN: tpp-run %s -print \
+// RUN: tpp-run %s -linalg-to-xsmm -print \
 // RUN:  -e entry -entry-point-result=void
 
 // RUN: tpp-run %s -tpp-to-loops -print \

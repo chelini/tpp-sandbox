@@ -55,11 +55,16 @@ FailureOr<UnaryInfo> getUnaryInfo(Value input, Value output) {
   unaryInfo.n = outputShapedType.getShape()[1];
 
   int64_t ldi = 1;
-  if (isa<ShapedType>(input.getType())) {
+  if (auto inputType = dyn_cast<ShapedType>(input.getType())) {
     auto stridesOnInput = mlir::utils::getStaticStrides(input);
     if (failed(stridesOnInput) || stridesOnInput->back() != 1)
       return failure();
-    ldi = stridesOnInput->front();
+    // For 1d buffer the leading dimension is the size of
+    // the buffer.
+    if (inputType.getRank() == 1)
+      ldi = inputType.getShape()[0];
+    else
+      ldi = stridesOnInput->front();
   }
   auto stridesOnOutput = mlir::utils::getStaticStrides(output);
   if (failed(stridesOnOutput) || stridesOnOutput->back() != 1)

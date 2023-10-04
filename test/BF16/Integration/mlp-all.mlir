@@ -1,4 +1,4 @@
-// RUN: tpp-run %s \
+// RUN: tpp-run %s -linalg-to-xsmm \
 // RUN:  -e entry -entry-point-result=void
 // 
 // Total flops = sum(broadcast O(n*m) + matmul O(2*n*m*k) + ReLU (O(n*m))

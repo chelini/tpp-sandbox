@@ -5,6 +5,10 @@
 // RUN:  -e entry -entry-point-result=void | \
 // RUN: FileCheck %s
 
+// RUN: tpp-run %s -linalg-to-xsmm -print \
+// RUN:  -e entry -entry-point-result=void | \
+// RUN: FileCheck %s
+
 // RUN: tpp-run %s -tpp-to-loops -print \
 // RUN:  -e entry -entry-point-result=void | \
 // RUN: FileCheck %s

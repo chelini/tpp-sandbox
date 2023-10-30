@@ -569,6 +569,8 @@ template <typename OpTy> struct PackMatmulImpl : public OpRewritePattern<OpTy> {
 
   LogicalResult matchAndRewrite(OpTy matmulOp,
                                 PatternRewriter &rewriter) const override {
+    if (blockingFactors.empty())
+      blockingFactors = SmallVector<int64_t>{32, 32, 32};
     FailureOr<linalg::GenericOp> packedMatmul = mlir::linalgx::packMatmulOp(
         rewriter, matmulOp,
         getAsOpFoldResult(rewriter.getI64ArrayAttr(blockingFactors)));
@@ -578,7 +580,7 @@ template <typename OpTy> struct PackMatmulImpl : public OpRewritePattern<OpTy> {
   }
 
 private:
-  ArrayRef<int64_t> blockingFactors;
+  mutable SmallVector<int64_t> blockingFactors;
 };
 
 // Entry point for packing a matmul operation.
@@ -592,8 +594,6 @@ struct PackMatmul : public tpp::impl::PackMatmulBase<PackMatmul> {
   using PackMatmulBase::PackMatmulBase;
 
   void runOnOperation() override {
-    if (blockingFactors.empty())
-      return;
     MLIRContext *ctx = getOperation().getContext();
     RewritePatternSet patterns(ctx);
     patterns.add<PackMatmulImpl<linalg::MatmulOp>,
@@ -612,6 +612,8 @@ struct DoItOnConv2DNchwFchw
 
   LogicalResult matchAndRewrite(linalg::Conv2DNchwFchwOp linalgOp,
                                 PatternRewriter &rewriter) const override {
+    if (blockingFactors.empty())
+      blockingFactors = SmallVector<int64_t>{32, 32};
     FailureOr<linalg::GenericOp> genericOp =
         mlir::linalgx::packConv2DNchwFchwOp(
             rewriter, linalgOp,
@@ -622,7 +624,7 @@ struct DoItOnConv2DNchwFchw
   }
 
 private:
-  SmallVector<int64_t> blockingFactors;
+  mutable SmallVector<int64_t> blockingFactors;
 };
 
 struct PackConv2DNchwFchw
@@ -630,8 +632,6 @@ struct PackConv2DNchwFchw
   using PackConv2DNchwFchwBase::PackConv2DNchwFchwBase;
 
   void runOnOperation() override {
-    if (blockingFactors.empty())
-      return;
     MLIRContext *ctx = getOperation().getContext();
     RewritePatternSet patterns(ctx);
     patterns.add<DoItOnConv2DNchwFchw>(ctx, blockingFactors);
@@ -648,6 +648,8 @@ struct DoItOnConv2DNhwcHwcf
 
   LogicalResult matchAndRewrite(linalg::Conv2DNhwcHwcfOp linalgOp,
                                 PatternRewriter &rewriter) const override {
+    if (blockingFactors.empty())
+      blockingFactors = SmallVector<int64_t>{32, 32};
     FailureOr<linalg::GenericOp> maybeGeneric =
         mlir::linalgx::packConv2DNhwcHwcfOp(
             rewriter, linalgOp,
@@ -658,7 +660,7 @@ struct DoItOnConv2DNhwcHwcf
   }
 
 private:
-  SmallVector<int64_t> blockingFactors;
+  mutable SmallVector<int64_t> blockingFactors;
 };
 
 struct PackConv2DNhwcHwcf
@@ -666,8 +668,6 @@ struct PackConv2DNhwcHwcf
   using PackConv2DNhwcHwcfBase::PackConv2DNhwcHwcfBase;
 
   void runOnOperation() override {
-    if (blockingFactors.empty())
-      return;
     MLIRContext *ctx = getOperation().getContext();
     RewritePatternSet patterns(ctx);
     patterns.add<DoItOnConv2DNhwcHwcf>(ctx, blockingFactors);

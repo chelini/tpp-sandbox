@@ -53,6 +53,8 @@ add_mlir_library(MLIRTPP
     TPPXsmmDialect
     TPPPerfDialect
     TPPGPU
+    LLVMCodeGen
+    LLVMAnalysis
 
     MLIRIR
     MLIRInferTypeOpInterface

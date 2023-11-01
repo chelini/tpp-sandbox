@@ -14,6 +14,11 @@ set(LIBS
         tpp_xsmm_runner_utils
         ${ONEDNN_LIBS}
         )
+set(LLVM_LINK_COMPONENTS
+  nativecodegen
+  native
+  )
+
 add_llvm_executable(tpp-opt tpp-opt.cpp)
 
 llvm_update_compile_flags(tpp-opt)

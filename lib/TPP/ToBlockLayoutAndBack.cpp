@@ -25,6 +25,12 @@
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Support/MathExtras.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Host.h"
 
 using namespace mlir;
 
@@ -44,6 +50,8 @@ namespace tpp {
 #include "TPP/Passes.h.inc"
 } // namespace tpp
 } // namespace mlir
+
+#define DEBUG_TYPE "block-linalg-ops"
 
 //===----------------------------------------------------------------------===//
 // Utils
@@ -182,6 +190,23 @@ static Value toPackLayoutKCRS_KCRSck(OpBuilder &builder, Location loc,
   return toPackLayoutImpl(builder, loc, input, tiles, innerDimPos,
                           /*outerDimsPerm=*/{});
 }
+
+// static std::unique_ptr<llvm::TargetMachine> createTargetMachine() {
+//   LLVM_DEBUG(llvm::sys::printDefaultTargetAndDetectedCPU(llvm::dbgs()));
+//   llvm::Triple triple;
+//   triple.setTriple(llvm::sys::getDefaultTargetTriple());
+//   std::string errorMessage;
+//   auto llvmTarget =
+//       llvm::TargetRegistry::lookupTarget(triple.str(), errorMessage);
+//   if (!llvmTarget)
+//     return nullptr;
+//   llvm::TargetOptions targetOpts;
+//   std::unique_ptr<llvm::TargetMachine>
+//   machine(llvmTarget->createTargetMachine(
+//       triple.str(), llvm::sys::getHostCPUName(), {}, targetOpts,
+//       llvm::Reloc::Model::PIC_, {}));
+//   return machine;
+// }
 
 template <typename OpTy>
 static FailureOr<linalg::GenericOp>
@@ -556,6 +581,30 @@ struct BubbleUpThroughFillOp : public OpRewritePattern<tensor::PackOp> {
   }
 };
 
+static SmallVector<int64_t>
+getDefaultBlockingFactors(linalg::LinalgOp linalgOp) {
+  // auto targetMachine = createTargetMachine();
+  // assert(targetMachine && "Cannot create target machine");
+
+  // llvm::DataLayout DL = targetMachine->createDataLayout();
+  // llvm::LLVMContext llvmContext;
+  // auto llvmModule = std::make_unique<llvm::Module>("dummy_module",
+  // llvmContext); llvm::Type *voidType = llvm::Type::getVoidTy(llvmContext);
+  // llvmModule->setDataLayout(DL);
+  // llvm::Function *dummyFunc = llvm::Function::Create(
+  //     llvm::FunctionType::get(voidType, false),
+  //     llvm::GlobalValue::ExternalLinkage, "dummy_func", *llvmModule);
+  // llvm::TargetTransformInfo tti =
+  //     targetMachine->getTargetTransformInfo(*dummyFunc);
+
+  if (isa<linalg::Conv2DNchwFchwOp>(linalgOp))
+    return {32, 32};
+  else if (isa<linalg::Conv2DNhwcHwcfOp>(linalgOp))
+    return {32, 32};
+  assert(isa<linalg::MatmulOp>(linalgOp));
+  return {32, 32, 32};
+}
+
 //===----------------------------------------------------------------------===//
 // Passes
 //===----------------------------------------------------------------------===//
@@ -569,8 +618,9 @@ template <typename OpTy> struct PackMatmulImpl : public OpRewritePattern<OpTy> {
 
   LogicalResult matchAndRewrite(OpTy matmulOp,
                                 PatternRewriter &rewriter) const override {
-    if (blockingFactors.empty())
-      blockingFactors = SmallVector<int64_t>{32, 32, 32};
+    if (blockingFactors.empty()) {
+      blockingFactors = getDefaultBlockingFactors(matmulOp);
+    }
     FailureOr<linalg::GenericOp> packedMatmul = mlir::linalgx::packMatmulOp(
         rewriter, matmulOp,
         getAsOpFoldResult(rewriter.getI64ArrayAttr(blockingFactors)));
@@ -613,7 +663,7 @@ struct DoItOnConv2DNchwFchw
   LogicalResult matchAndRewrite(linalg::Conv2DNchwFchwOp linalgOp,
                                 PatternRewriter &rewriter) const override {
     if (blockingFactors.empty())
-      blockingFactors = SmallVector<int64_t>{32, 32};
+      blockingFactors = getDefaultBlockingFactors(linalgOp);
     FailureOr<linalg::GenericOp> genericOp =
         mlir::linalgx::packConv2DNchwFchwOp(
             rewriter, linalgOp,
@@ -649,7 +699,7 @@ struct DoItOnConv2DNhwcHwcf
   LogicalResult matchAndRewrite(linalg::Conv2DNhwcHwcfOp linalgOp,
                                 PatternRewriter &rewriter) const override {
     if (blockingFactors.empty())
-      blockingFactors = SmallVector<int64_t>{32, 32};
+      blockingFactors = getDefaultBlockingFactors(linalgOp);
     FailureOr<linalg::GenericOp> maybeGeneric =
         mlir::linalgx::packConv2DNhwcHwcfOp(
             rewriter, linalgOp,

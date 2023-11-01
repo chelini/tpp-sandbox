@@ -20,6 +20,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 #include "TPP/Dialect/Check/BufferizableOpInterfaceImpl.h"
@@ -33,6 +34,8 @@
 #include "TPP/Passes.h"
 
 int main(int argc, char **argv) {
+  llvm::InitializeNativeTarget();
+
   mlir::registerAllPasses();
   mlir::tpp::registerTppCompilerPasses();
 

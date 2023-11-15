@@ -1,4 +1,5 @@
 add_mlir_library(TPPTestLib
   TestForToForAllRewrite.cpp
   TestMatchers.cpp
+  TestClone.cpp
   )

@@ -86,6 +86,7 @@ class TppDialect;
 // Testing passes.
 void registerTestStructuralMatchers();
 void registerTestForToForAllRewrite();
+void registerTestCloneApi();
 
 } // namespace tpp
 

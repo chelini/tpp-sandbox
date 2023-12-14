@@ -68,8 +68,8 @@ FailureOr<linalg::GenericOp> packVNNIMatmulOp(RewriterBase &rewriter,
                                               linalg::GenericOp linalgOp);
 
 // Attempt to block a Brgemm to VNNI format.
-FailureOr<tpp::BrgemmOp> packVNNIBRGemmOp(RewriterBase &rewriter,
-                                          linalg::BatchReduceMatmulOp linalgOp);
+FailureOr<linalg::GenericOp>
+packVNNIBRGemmOp(RewriterBase &rewriter, linalg::BatchReduceMatmulOp linalgOp);
 
 // Collapse iterators in a linalg.generic based on 'reassociation'.
 FailureOr<linalg::GenericOp>

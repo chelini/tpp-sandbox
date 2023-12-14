@@ -29,17 +29,6 @@ def ConvertMemRefToXsmm : Pass<"convert-memref-to-xsmm", "func::FuncOp"> {
   let dependentDialects = ["memref::MemRefDialect", "xsmm::XsmmDialect"];
 }
 
-def ConvertTppToLoops : Pass<"convert-tpp-to-loops", "func::FuncOp"> {
-  let summary = "Convert tpp to loops";
-  let description = [{
-    Convert tpp operations to SCF loops.
-  }];
-  let dependentDialects = ["scf::SCFDialect", "memref::MemRefDialect"];
-  let options = [
-    Option<"parallel", "parallel", "bool", "false", "use parallel loops">
-  ];
-}
-
 def ConvertTppToXsmm : Pass<"convert-tpp-to-xsmm", "func::FuncOp"> {
   let summary = "Convert tpp to xsmm";
   let description = [{
@@ -249,15 +238,9 @@ def DefaultTppPasses : Pass<"default-tpp-passes", "ModuleOp"> {
     to standard low-level dialects.
   }];
   let options= [
-    Option<"tppToLoops", "tpp-to-loops",
-           "bool", /*default=*/"false",
-           "By default TPP ops are lowered to XSMM. Lower TPP to loops instead.">,
     Option<"linalgToLoops", "linalg-to-loops",
            "bool", /*default=*/"false",
-           "Skip all TPP transformations. Lower linalg directly to loops.">,
-    Option<"linalgToXsmm", "linalg-to-xsmm",
-           "bool", /*default=*/"true",
-           "Skip all TPP transformations. Lower lianalg directly to xsmm.">
+           "Skip all TPP transformations. Lower linalg directly to loops.">
   ];
 }
 
@@ -362,15 +345,7 @@ def TppLowering : Pass<"tpp-lowering", "func::FuncOp"> {
   let description = [{
     Lower all TPP operations into combination of operations from
     standard and local dialects.
-  }];
-  let options= [
-    Option<"tppToLoops", "tpp-to-loops",
-           "bool", /*default=*/"false",
-           "By default TPP ops are lowered to XSMM. Lower TPP to loops instead.">,
-    Option<"linalgToXsmm", "linalg-to-xsmm",
-           "bool", /*default=*/"true",
-           "By default Linalg ops are lowered to TPP. Lower Linalg to XSMM instead.">,
-  ];
+  }]; 
 }
 
 def ConvertForAllToParallelOp : Pass<"convert-forall-to-parallel", 

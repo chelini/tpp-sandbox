@@ -28,10 +28,30 @@ namespace tpp {
 
 namespace {
 
+// Returns true if: 1) the region has a single block. 2) The block has a single
+// operation `OP`. 3) The operation result types are int or float.
+template <typename OP> static bool hasOnlyOp(Region &region) {
+  if (!region.hasOneBlock())
+    return false;
+  unsigned numberOfOpsInRegion = 2;
+  if (std::is_same<OP, linalg::YieldOp>::value)
+    numberOfOpsInRegion = 1;
+  if (std::distance(region.front().begin(), region.front().end()) !=
+      numberOfOpsInRegion)
+    return false;
+  for (Operation &op : region.front()) {
+    if (!isa<OP, linalg::YieldOp>(op) ||
+        llvm::any_of(op.getResultTypes(),
+                     [](Type type) { return !type.isIntOrFloat(); }))
+      return false;
+  }
+  return true;
+}
+
 static bool isBroadCastOp(linalg::GenericOp linalgOp) {
   if (linalgOp->getNumOperands() != 2 || linalgOp->getNumResults() != 1)
     return false;
-  if (!tpp::utils::hasOnlyOp<linalg::YieldOp>(linalgOp.getRegion()))
+  if (!hasOnlyOp<linalg::YieldOp>(linalgOp.getRegion()))
     return false;
   SmallVector<unsigned> perm;
   return linalgOp.getMatchingIndexingMap(linalgOp.getDpsInputOperand(0))
@@ -59,7 +79,7 @@ struct EliminateZeroInitAndAddBiasToInit
       return failure();
 
     if (!linalg::isElementwise(linalgOp) ||
-        !tpp::utils::hasOnlyOp<arith::AddFOp>(linalgOp.getRegion()))
+        !hasOnlyOp<arith::AddFOp>(linalgOp.getRegion()))
       return failure();
 
     OpOperand *lhs = linalgOp.getDpsInputOperand(0);

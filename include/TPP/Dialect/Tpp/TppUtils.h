@@ -32,7 +32,7 @@ namespace utils {
 bool isMarkedWithTpp(linalg::LinalgOp linalgOp, const std::string &target);
 
 // Return true if the linalg.generic can convert to a brgemm in VNNI format.
-bool isBrgemmVnniOp(linalg::GenericOp linalgOp,
+bool isBrgemmVnniOp(linalg::GenericOp linalgOp, bool &hasBatch,
                     SmallVectorImpl<Value> *capturedOperands = nullptr);
 
 // Returns true if: 1) the region has a single block. 2) The block has a single

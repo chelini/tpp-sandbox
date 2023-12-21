@@ -1065,8 +1065,8 @@ struct ConvertGenericToVnniMatmulLikeOp
                                 PatternRewriter &rewriter) const override {
     bool hasBatch = false;
     if (!genericOp.hasBufferSemantics() ||
-        !tpp::utils::isBrgemmVnniOp(genericOp, hasBatch,
-                                    /*captures=*/nullptr)) {
+        !structured_match::utils::isBrgemmVnniOp(genericOp, hasBatch,
+                                                 /*captures=*/nullptr)) {
       return failure();
     }
     Value bufferA = genericOp.getDpsInputs()[0];

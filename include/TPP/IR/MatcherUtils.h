@@ -13,6 +13,7 @@ namespace mlir {
 class Value;
 namespace linalg {
 class LinalgOp;
+class GenericOp;
 } // namespace linalg
 namespace structured_match {
 namespace utils {
@@ -58,6 +59,10 @@ bool isTwoDTransposeOp(linalg::LinalgOp linalgOp,
 // output with zeros.
 bool isTwoDFillOpWithZeros(linalg::LinalgOp linalgOp,
                            SmallVectorImpl<Value> *capturedOperands = nullptr);
+
+// Return true if the linalgOp can convert to a brgemm or a gemm in VNNI layout.
+bool isBrgemmVnniOp(linalg::GenericOp linalgOp, bool &hasBatch,
+                    SmallVectorImpl<Value> *capturedOperands = nullptr);
 
 } // namespace utils
 } // namespace structured_match

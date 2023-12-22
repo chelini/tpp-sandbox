@@ -22,9 +22,6 @@ add_mlir_library(TPPTransforms
   
   DEPENDS
     MLIRPerfOpsIncGen
-    MLIRTppOpsIncGen
-    MLIRTppAttrDefIncGen
-    MLIRTppInterfaceIncGen
     MLIRXsmmOpsIncGen
     MLIRXsmmAttrDefIncGen
     TPPCompilerPassIncGen
@@ -35,4 +32,5 @@ add_mlir_library(TPPTransforms
     MLIRBufferizationToMemRef
     MLIRBufferizationPipelines
     TPPTransformsUtils
+    TPPIR
   )

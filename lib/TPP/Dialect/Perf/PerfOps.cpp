@@ -46,6 +46,23 @@ LogicalResult StopTimerOp::verify() {
 // BenchOp
 //===----------------------------------------------------------------------===//
 
+OperandRange BenchOp::getEntrySuccessorOperands(RegionBranchPoint point) {
+  return getIterArgs();
+}
+
+void BenchOp::getSuccessorRegions(RegionBranchPoint parentReg,
+                                  SmallVectorImpl<RegionSuccessor> &regions) {
+  // The `body` region branch back to the parent operation.
+  if (parentReg == getBodyRegion()) {
+    regions.push_back(RegionSuccessor(getBodyResults()));
+    return;
+  }
+
+  // Otherwise the successor is the body region.
+  regions.push_back(
+      RegionSuccessor(&getBodyRegion(), getBodyRegion().getArguments()));
+}
+
 void BenchOp::build(OpBuilder &builder, OperationState &result, Value numIters,
                     ValueRange iterArgs) {
   result.addOperands({numIters});

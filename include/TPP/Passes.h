@@ -81,7 +81,6 @@ class SPIRVDialect;
 } // namespace spirv
 
 namespace tpp {
-class TppDialect;
 
 // Testing passes.
 void registerTestStructuralMatchers();

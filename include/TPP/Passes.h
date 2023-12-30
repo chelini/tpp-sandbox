@@ -14,46 +14,35 @@
 namespace mlir {
 class ModuleOp;
 
-namespace func {
-class FuncOp;
-class FuncDialect;
-} // namespace func
-
-namespace bufferization {
-class BufferizationDialect;
-} // namespace bufferization
-
-namespace math {
-class MathDialect;
-} // namespace math
+namespace affine {
+class AffineDialect;
+} // namespace affine
 
 namespace arith {
 class ArithDialect;
 } // namespace arith
 
-namespace vector {
-class VectorDialect;
-} // namespace vector
+namespace bufferization {
+class BufferizationDialect;
+} // namespace bufferization
+
+namespace check {
+class CheckDialect;
+} // namespace check
+
+namespace func {
+class FuncOp;
+class FuncDialect;
+} // namespace func
+
+namespace gpu {
+class GPUModuleOp;
+class GPUDialect;
+} // namespace gpu
 
 namespace linalg {
 class LinalgDialect;
 } // namespace linalg
-
-namespace scf {
-class SCFDialect;
-} // namespace scf
-
-namespace tensor {
-class TensorDialect;
-} // namespace tensor
-
-namespace memref {
-class MemRefDialect;
-} // namespace memref
-
-namespace xsmm {
-class XsmmDialect;
-} // namespace xsmm
 
 namespace LLVM {
 class LLVMDialect;
@@ -63,26 +52,39 @@ namespace math {
 class MathDialect;
 } // namespace math
 
-namespace tensor {
-class TensorDialect;
-} // namespace tensor
+namespace memref {
+class MemRefDialect;
+} // namespace memref
 
-namespace gpu {
-class GPUModuleOp;
-class GPUDialect;
-} // namespace gpu
+namespace perf {
+class PerfDialect;
+} // namespace perf
+
+namespace scf {
+class SCFDialect;
+} // namespace scf
 
 namespace spirv {
 class SPIRVDialect;
 } // namespace spirv
 
-namespace tpp {
+namespace tensor {
+class TensorDialect;
+} // namespace tensor
 
+namespace tpp {
 // Testing passes.
 void registerTestStructuralMatchers();
 void registerTestForToForAllRewrite();
-
 } // namespace tpp
+
+namespace vector {
+class VectorDialect;
+} // namespace vector
+
+namespace xsmm {
+class XsmmDialect;
+} // namespace xsmm
 
 } // namespace mlir
 

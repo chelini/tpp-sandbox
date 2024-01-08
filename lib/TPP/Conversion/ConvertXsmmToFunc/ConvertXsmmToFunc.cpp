@@ -78,7 +78,7 @@ static SmallVector<Value> getOperands(OpBuilder &builder, Location loc,
 }
 
 static void buildInvokeCall(OpBuilder &builder, Location loc,
-                            std::string funcName, Operation *op,
+                            const std::string& funcName, Operation *op,
                             IntegerAttr dataTypeAttr) {
   FlatSymbolRefAttr fnName = SymbolRefAttr::get(op->getContext(), funcName);
   ModuleOp module = op->getParentOfType<ModuleOp>();
@@ -276,7 +276,7 @@ void addUnaryAndBinaryFlags(RewriterBase &rewriter,
 
 template <typename OpTy>
 static LogicalResult buildDispatchOp(RewriterBase &rewriter, OpTy dispatchOp,
-                                     std::string funcName) {
+                                     const std::string& funcName) {
   Location loc = dispatchOp.getLoc();
   FlatSymbolRefAttr fnName =
       SymbolRefAttr::get(rewriter.getContext(), funcName);

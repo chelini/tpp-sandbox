@@ -528,7 +528,7 @@ ParseResult FusedBrgemmOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
   if (parser.parseRSquare())
     return failure();
-  auto ctx = parser.getBuilder().getContext();
+  auto *ctx = parser.getBuilder().getContext();
   result.addAttribute(UNARY_KIND, FusedUnaryOpKindAttr::get(ctx, unaryKind));
   result.addAttribute(BINARY_KIND, FusedBinaryOpKindAttr::get(ctx, binaryKind));
   return parseTppOp(parser, result);

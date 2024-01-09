@@ -47,7 +47,7 @@ struct CombineBrgemmAddAndRelu : public OpRewritePattern<tpp::ReluOp> {
     }
     if (!hasBrgemmProducer)
       return failure();
-    auto ctx = rewriter.getContext();
+    auto *ctx = rewriter.getContext();
     auto unaryType =
         tpp::FusedUnaryOpKindAttr::get(ctx, tpp::FusedUnaryOpKind::RELU);
     auto binaryType =

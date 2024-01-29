@@ -1142,6 +1142,7 @@ struct SimplifyAndCanonicalizePack
 void mlir::tpp::populateSimplifyPacking(RewritePatternSet &patterns) {
   MLIRContext *ctx = patterns.getContext();
   tensor::populateSimplifyPackAndUnpackPatterns(patterns);
+  tensor::populateFoldIntoPackAndUnpackPatterns(patterns);
   tensor::PackOp::getCanonicalizationPatterns(patterns, ctx);
   tensor::UnPackOp::getCanonicalizationPatterns(patterns, ctx);
   tensor::ExtractSliceOp::getCanonicalizationPatterns(patterns, ctx);

@@ -118,6 +118,43 @@ struct BatchReduceOpDeGeneralizationPattern
   }
 };
 
+// From linalg.generic to linalg.transpose
+struct TransposeOpPattern : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+
+  bool isTransposeOp(linalg::GenericOp linalgOp) const {
+    using namespace mlir::structured_match;
+    using MapList = ArrayRef<ArrayRef<AffineExpr>>;
+    auto infer = [](MapList m) { return AffineMap::inferFromExprList(m); };
+    AffineExpr i, j;
+    bindDims(linalgOp->getContext(), i, j);
+    auto mapList = infer({{j, i}, {i, j}});
+    auto transposeMatcher =
+      StructuredOpMatcher::make<linalg::GenericOp>()
+        .operation(NumDpsInits(EqualsTo(1)))
+        .operation(NumDpsInputs(EqualsTo(1)))
+        .operation(NumRegions(EqualsTo(1)))
+        .dim(MatchAll(), mlir::utils::IteratorType::parallel)
+        .input(MatchOne(0), HasMap(EqualsTo(mapList[0])))
+        .output(MatchOne(0), HasMap(EqualsTo(mapList[1])))
+        .region(MatchOne(0), 
+            WithSingleOp<linalg::YieldOp>(/*captures=*/nullptr));
+    return transposeMatcher.match(linalgOp);
+  }
+
+  LogicalResult matchAndRewrite(linalg::GenericOp linalgOp,
+                                PatternRewriter &rewriter) const override {
+    if (!isTransposeOp(linalgOp))
+      return failure();
+    Value inputOperand = linalgOp.getDpsInputs()[0];
+    Value outputOperand = linalgOp.getDpsInits()[0];
+    SmallVector<int64_t> perm({1, 0});
+    rewriter.replaceOpWithNewOp<linalg::TransposeOp>(
+        linalgOp, inputOperand, outputOperand, perm);
+    return success();
+  }
+};
+
 // From linalg.generic to linalg.fillOp.
 struct FillOpDeGeneralizationPattern
     : public OpRewritePattern<linalg::GenericOp> {
@@ -156,5 +193,5 @@ struct FillOpDeGeneralizationPattern
 void mlir::linalg::populateLinalgDeGeneralizationPatterns(
     RewritePatternSet &patterns) {
   patterns.add<FillOpDeGeneralizationPattern, MatmulOpDeGeneralizationPattern,
-               BatchReduceOpDeGeneralizationPattern>(patterns.getContext());
+               BatchReduceOpDeGeneralizationPattern, TransposeOpPattern>(patterns.getContext());
 }
